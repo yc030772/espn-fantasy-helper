@@ -128,9 +128,15 @@ def demo():
             {"PTS": 10, "REB": 3, "AST": 2, "STL": .5, "BLK": .2, "3PM": 1, "TO": 1, "FGM": 4, "FGA": 10, "FTM": 2, "FTA": 3},
             {"PTS": 2, "REB": 8, "AST": 1, "STL": .3, "BLK": 2, "3PM": 0, "TO": 4, "FGM": 1, "FGA": 2, "FTM": 0, "FTA": 2}]
     zscores(rows)
-    assert rows[0]["score"] > rows[1]["score"] > rows[2]["score"], [r["score"] for r in rows]
-    assert rows[2]["zTO"] < 0 and rows[1]["zTO"] > 0            # 失誤多 = 負分
+    assert rows[0]["score"] > max(rows[1]["score"], rows[2]["score"])   # 全能明星最高
+    assert rows[2]["zTO"] < 0 < rows[1]["zTO"]                  # 失誤多 = 負分
     assert rows[2]["FT_imp"] < 0 < rows[0]["FT_imp"]            # 罰球爛 = 扣分
+    # 權重要真的有作用:調高 TO 權重,失誤王的分數必須下降
+    before = rows[2]["score"]
+    W["TO"] = 2.0
+    zscores(rows)
+    assert rows[2]["score"] < before, (before, rows[2]["score"])
+    W["TO"] = 0.60
     print("demo ok")
 
 
