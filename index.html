@@ -174,15 +174,16 @@ const hasAdp=p=>p.adp&&p.adp<140;   // 140 = ESPN 未排名的預設值
 /* 排序依據。回測 312 人:ESPN 排名對「下一季實際 9-cat 表現」的 Spearman
    ρ=.906,去年實際數據只有 .769,混合反而更差 -> 預設用 ESPN 排名。
    但去年數據仍然不可少:類別強弱、建議、交易分析全部靠它。 */
-/* 回傳兩份名次表:be = 依 ESPN 排名的位次,bt = 依我們自己總分的位次。
-   兩者都是穩定的位次,跟畫面當下用哪個排序無關。 */
-function ranks(pool){
-  const bt={}, be={};
-  [...pool].sort((a,b)=>totalOr(b)-totalOr(a)).forEach((p,i)=>bt[p.id]=i+1);
-  const er=p=>p.espn_rank||(hasAdp(p)?p.adp:9999);   // 新秀沒排名只有 ADP,尺度相同可遞補
-  [...pool].sort((a,b)=>er(a)-er(b)).forEach((p,i)=>be[p.id]=i+1);
-  return {bt,be};
+/* 我方名次:對全部球員算一次,不隨已選走的人變動,才能跟 ESPN 排名直接相減。
+   ESPN 那邊直接用它自己的排名數字 —— 不要跟 ADP 混,兩者尺度不同:
+   ADP 有 140 的天花板,251 名只有 ADP 的球員全擠在 140 以內,
+   一混就會把 ESPN 真實排名 >100 的人整批往後推(Knueppel #147 被擠到 #403)。 */
+function computeRanks(){
+  P.filter(p=>total(p)!==null).sort((a,b)=>total(b)-total(a))
+   .forEach((p,i)=>p.mrank=i+1);
+  P.filter(p=>total(p)===null).forEach(p=>p.mrank=null);
 }
+const gap=p=>(p.espn_rank&&p.mrank)?p.espn_rank-p.mrank:null;
 
 // 分數熱度:綠(強)→ 灰(中)→ 紅(弱)
 const heat=v=>{const t=Math.max(-1,Math.min(1,v/8));
@@ -301,7 +302,7 @@ const num=(k,d=1)=>({h:k,f:p=>(p[k]??0).toFixed(d)});
 function render(){
   const app=$('#app'); app.innerHTML='';
   if(!P.length){app.append(el('p','hint','載入中…'));return}
-  syncDraft();
+  syncDraft(); computeRanks();
   ({draft:draftView,all:allView,trade:tradeView,fa:faView,league:leagueView})[tab](app);
 }
 
@@ -343,7 +344,8 @@ function draftView(app){
   const sel=el('select'); sel.id='pf';
   ['全部','PG','SG','SF','PF','C'].forEach(o=>sel.append(new Option(o,o)));
   sel.onchange=redrawDraft; bar.append(' ',sel,' ');
-  bar.append(el('span','hint','點任一欄位標題排序,再點一次換升/降冪 · 回測 312 人:ESPN ρ=.906、我們 ρ=.769 · 小樣本已做可靠度收縮'));
+  bar.append(el('span','hint','點任一欄位標題排序,再點一次換升/降冪。ESPN 排序 = ESPN 自己的排名(388 人有),'
+    +'新秀顯示「–」請改點 ADP 欄 · 回測 312 人:ESPN ρ=.906、我們 ρ=.769'));
   app.append(bar);
 
   const strip=el('div','card'); strip.id='stand'; strip.style.marginBottom='12px';
@@ -460,21 +462,21 @@ function redrawDraft(){
   const w=weights(S.mine);
   let pool=P.filter(p=>!S.picks.includes(p.id))
     .filter(p=>p.name.toLowerCase().includes(q)&&(pf==='全部'||p.pos===pf));
-  const {bt,be}=ranks(pool);
-  const rec=recSet([...pool].sort((a,b)=>bt[a.id]-bt[b.id]).slice(0,120),S.mine);
+  const rec=recSet([...pool].filter(p=>p.mrank).sort((a,b)=>a.mrank-b.mrank).slice(0,120),S.mine);
   const t=onClock(), mineTurn=t===S.slot-1;
   const cz=(p,c)=>noData(p)?null:S.w[c]*catZ(p,c);
   const cols=[
     // 欄位 1、2:兩套排序
-    {h:'ESPN 排序',k:'espn',v:p=>be[p.id],
-     f:p=>`<b>${be[p.id]}</b>${p.espn_rank?'':'<span class="pos" title="ESPN 未給排名,以 ADP 遞補">~</span>'}`},
-    {h:'我的排序',k:'mine',v:p=>total(p)===null?null:bt[p.id],
-     f:p=>total(p)===null?'<span class="pos" title="無去年數據,無法評分">–</span>':`<b>${bt[p.id]}</b>`},
+    {h:'ESPN 排序',k:'espn',v:p=>p.espn_rank||null,
+     f:p=>p.espn_rank?`<b>${p.espn_rank}</b>`
+       :`<span class="pos" title="ESPN 尚未給排名(多為新秀),這裡只有 ADP ${hasAdp(p)?Math.round(p.adp):'也沒有'}">–</span>`},
+    {h:'我的排序',k:'mine',v:p=>p.mrank,
+     f:p=>p.mrank?`<b>${p.mrank}</b>`:'<span class="pos" title="無去年數據,無法評分">–</span>'},
     // + = ESPN 排得比我們低,我們更看好(可能撿便宜)
     // − = ESPN 排得比我們高,通常是去年受傷、場均失真的球星
-    {h:'落差',k:'gap',desc:1,v:p=>total(p)===null?null:be[p.id]-bt[p.id],f:p=>{
-      if(total(p)===null)return '-';
-      const e=be[p.id]-bt[p.id];
+    {h:'落差',k:'gap',desc:1,v:p=>gap(p),f:p=>{
+      const e=gap(p);
+      if(e===null)return '-';
       const cls=e>=25?'edge-p':e<=-25?'edge-w':'edge-n';
       return `<span class="${cls}" title="${e>=25?'ESPN 沒那麼看好,可能撿便宜':e<=-25?'ESPN 明顯更看好 —— 多半是去年受傷、場均失真':''}">${e>0?'+':''}${e}</span>`}},
     {h:'總分',k:'total',desc:1,v:p=>total(p),f:p=>hot(total(p))},
