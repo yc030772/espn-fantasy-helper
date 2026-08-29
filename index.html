@@ -1,0 +1,319 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fantasy BB 助手 · H2H Cat</title>
+<style>
+:root{--bg:#0f1216;--card:#171c22;--line:#252c35;--fg:#e6e9ee;--dim:#8b95a3;
+      --good:#3ddc97;--bad:#ff6b6b;--accent:#4c9aff;--warn:#ffb454}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 -apple-system,"PingFang TC",Segoe UI,sans-serif}
+header{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+h1{font-size:16px;margin:0;font-weight:600}
+.tabs{display:flex;gap:2px;margin-left:auto}
+.tabs button{background:none;border:1px solid var(--line);color:var(--dim);padding:6px 14px;cursor:pointer;border-radius:6px;font-size:13px}
+.tabs button.on{background:var(--accent);border-color:var(--accent);color:#06101f;font-weight:600}
+main{padding:16px 18px;max-width:1400px}
+.row{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.grow{flex:1;min-width:420px}
+.side{width:330px;flex-shrink:0}
+h2{font-size:13px;margin:0 0 10px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+input,select{background:#0c1014;border:1px solid var(--line);color:var(--fg);padding:6px 9px;border-radius:6px;font:inherit}
+input[type=text]{width:170px}
+label.chk{color:var(--dim);font-size:12px;display:inline-flex;gap:5px;align-items:center;cursor:pointer;user-select:none}
+button.act{background:#212a34;border:1px solid var(--line);color:var(--fg);border-radius:5px;padding:3px 8px;cursor:pointer;font-size:12px}
+button.act:hover{border-color:var(--accent)}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th{text-align:right;color:var(--dim);font-weight:500;font-size:11px;padding:5px 6px;position:sticky;top:0;background:var(--card);cursor:pointer;white-space:nowrap}
+th:first-child,th.l,td.l{text-align:left}
+td{padding:4px 6px;text-align:right;border-top:1px solid #1d232b;white-space:nowrap}
+tbody tr:hover{background:#1d242c}
+.scroll{max-height:66vh;overflow:auto}
+.pos{color:var(--dim);font-size:11px}
+.pill{font-size:10px;padding:1px 5px;border-radius:4px;background:#2a2016;color:var(--warn);margin-left:4px}
+.edge-p{color:var(--good)}.edge-n{color:var(--dim)}
+.bar{height:7px;border-radius:4px;background:#222a33;position:relative;overflow:hidden}
+.bar i{position:absolute;top:0;bottom:0;left:50%;background:var(--good)}
+.bar i.neg{background:var(--bad)}
+.catrow{display:grid;grid-template-columns:38px 1fr 52px;gap:8px;align-items:center;margin:5px 0;font-size:12px}
+.catrow b{font-weight:500;color:var(--dim)}
+.num{text-align:right;color:var(--dim)}
+.mine{color:var(--good)}
+.gone{opacity:.32}
+.hint{color:var(--dim);font-size:12px;margin:8px 0 0}
+.tag{display:inline-block;background:#212a34;border:1px solid var(--line);border-radius:5px;padding:2px 6px;margin:2px;font-size:12px;cursor:pointer}
+.tag.sel{background:var(--accent);color:#06101f;border-color:var(--accent)}
+.big{font-size:22px;font-weight:600}
+.err{color:var(--bad);font-size:12px}
+</style>
+
+<header>
+  <h1>🏀 Fantasy 助手 <span style="color:var(--dim);font-weight:400">H2H 9-Cat</span></h1>
+  <span class="hint" id="src"></span>
+  <div class="tabs">
+    <button data-t="draft" class="on">選秀</button>
+    <button data-t="trade">交易</button>
+    <button data-t="fa">FA</button>
+    <button data-t="league">連結聯盟</button>
+  </div>
+</header>
+<main id="app"></main>
+
+<script>
+const CATS=['PTS','REB','AST','STL','BLK','3PM','TO','FG_imp','FT_imp'];
+const LBL={PTS:'PTS',REB:'REB',AST:'AST',STL:'STL',BLK:'BLK','3PM':'3PM',TO:'TO',FG_imp:'FG%',FT_imp:'FT%'};
+const $=s=>document.querySelector(s), el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e};
+const S=JSON.parse(localStorage.getItem('fbb')||'{}');
+const save=()=>localStorage.setItem('fbb',JSON.stringify(S));
+S.mine=S.mine||[]; S.gone=S.gone||[];
+let P=[], byId={}, tab='draft';
+
+// 出賽數折算:H2H 每週對戰,受傷坐板凳的球員拿不到分
+const durability=p=>S.gp===false?1:Math.min(1,(p.GP+8)/70);
+const catZ=(p,c)=>p['z'+c]*durability(p);
+const total=p=>CATS.reduce((s,c)=>s+catZ(p,c),0);
+const hasAdp=p=>p.adp&&p.adp<140;   // 140 = ESPN 未排名的預設值
+
+fetch('data.json').then(r=>r.json()).then(d=>{
+  P=d; P.forEach(p=>byId[p.id]=p);
+  $('#src').textContent=`${P.length} 名球員 · 2025-26 實際數據`;
+  render();
+});
+
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
+  tab=b.dataset.t;
+  document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));
+  render();
+});
+
+/* ---------- 陣容 / 分類強弱 ---------- */
+const teamCats=ids=>{const t={};CATS.forEach(c=>t[c]=ids.reduce((s,i)=>s+(byId[i]?catZ(byId[i],c):0),0));return t};
+// 弱項加權:我缺的類別,該類別的球員對我更值錢
+function weights(ids){
+  const t=teamCats(ids), n=Math.max(ids.length,1), w={};
+  const avg=CATS.map(c=>t[c]/n), m=Math.max(...avg.map(Math.abs),.5);
+  CATS.forEach((c,i)=>w[c]=Math.min(1.6,Math.max(.5,1-avg[i]/m)));
+  // 前幾輪先拿最好的人(BPA),陣容成形後才愈來愈看需求
+  w._mix=Math.min(.5,ids.length/12);
+  return w;
+}
+const fit=(p,w)=>{
+  const raw=total(p), wt=CATS.reduce((s,c)=>s+w[c]*catZ(p,c),0);
+  return raw*(1-w._mix)+wt*w._mix;
+};
+
+function catBars(t,scale){
+  const box=el('div');
+  CATS.forEach(c=>{
+    const v=t[c], pct=Math.min(50,Math.abs(v)/scale*50);
+    const r=el('div','catrow');
+    r.append(el('b',null,LBL[c]));
+    const bar=el('div','bar'), i=el('i',v<0?'neg':'');
+    i.style.width=pct+'%'; i.style.left=v<0?(50-pct)+'%':'50%';
+    bar.append(i); r.append(bar);
+    r.append(el('span','num '+(v>0?'mine':''),v.toFixed(1)));
+    box.append(r);
+  });
+  return box;
+}
+
+/* ---------- 表格 ---------- */
+function playerTable(list,cols,rowAct){
+  const wrap=el('div','scroll'), tb=el('table');
+  tb.innerHTML='<thead><tr><th class="l">#</th><th class="l">球員</th><th class="l">POS</th><th>GP</th><th>MIN</th>'
+    +cols.map(c=>`<th>${c.h}</th>`).join('')+'<th></th></tr></thead>';
+  const body=el('tbody');
+  list.forEach((p,i)=>{
+    const tr=el('tr');
+    if(S.mine.includes(p.id))tr.classList.add('mine');
+    if(S.gone.includes(p.id))tr.classList.add('gone');
+    tr.innerHTML=`<td class="l">${i+1}</td><td class="l">${p.name}${p.injury&&p.injury!=='ACTIVE'?`<span class="pill">${p.injury}</span>`:''}</td>`
+      +`<td class="l pos">${p.pos}</td><td>${p.GP}</td><td>${p.MIN}</td>`+cols.map(c=>`<td>${c.f(p)}</td>`).join('');
+    const td=el('td'); if(rowAct)rowAct(p,td); tr.append(td); body.append(tr);
+  });
+  tb.append(body); wrap.append(tb); return wrap;
+}
+const num=(k,d=1)=>({h:k,f:p=>(p[k]??0).toFixed(d)});
+
+/* ---------- 三個分頁 ---------- */
+function render(){
+  const app=$('#app'); app.innerHTML='';
+  if(!P.length){app.append(el('p','hint','載入中…'));return}
+  ({draft:draftView,trade:tradeView,fa:faView,league:leagueView})[tab](app);
+}
+
+function draftView(app){
+  const w=weights(S.mine);
+  const pool=P.filter(p=>!S.mine.includes(p.id)&&!S.gone.includes(p.id))
+              .sort((a,b)=>fit(b,w)-fit(a,w));
+  const bar=el('div','card',''); bar.style.marginBottom='12px';
+  bar.append(el('span',null,'搜尋 '),Object.assign(document.createElement('input'),
+    {type:'text',id:'q',placeholder:'球員名',oninput:redrawDraft}));
+  const sel=el('select'); sel.id='pf';
+  ['全部','PG','SG','SF','PF','C'].forEach(o=>sel.append(new Option(o,o)));
+  sel.onchange=redrawDraft; bar.append(' ',sel,' ');
+  const gp=el('label','chk'); gp.innerHTML='<input type="checkbox" id="gp"'+(S.gp!==false?' checked':'')+'> 考慮出賽數(H2H 建議開)';
+  gp.querySelector('input').onchange=e=>{S.gp=e.target.checked;save();render()};
+  bar.append(gp);
+  const rst=el('button','act','清空我的隊伍'); rst.style.marginLeft='10px';
+  rst.onclick=()=>{S.mine=[];S.gone=[];save();render()}; bar.append(rst);
+  app.append(bar);
+
+  const row=el('div','row'), left=el('div','card grow'), right=el('div','side');
+  left.id='dl'; app.append(row); row.append(left,right);
+
+  right.append(Object.assign(el('div','card'),{}));
+  const me=right.querySelector('.card');
+  me.append(el('h2',null,`我的隊伍 (${S.mine.length})`));
+  if(S.mine.length){
+    me.append(catBars(teamCats(S.mine),Math.max(3,S.mine.length*1.2)));
+    const weak=CATS.map(c=>[c,teamCats(S.mine)[c]]).sort((a,b)=>a[1]-b[1]).slice(0,3).map(x=>LBL[x[0]]);
+    me.append(el('p','hint','最弱三項:<b style="color:var(--bad)">'+weak.join(' · ')+'</b><br>下面排名已依此加權。強項會自動降權(等於幫你 punt)。'));
+    const ul=el('div');
+    S.mine.forEach(id=>{const t=el('span','tag sel',byId[id].name);
+      t.onclick=()=>{S.mine=S.mine.filter(x=>x!==id);save();render()};ul.append(t)});
+    me.append(ul);
+  } else me.append(el('p','hint','按右側「選」把球員加進我的隊伍,按「X」標記被別人選走。<br>加了人之後排名會依你的弱項重新加權。'));
+  redrawDraft();
+}
+function redrawDraft(){
+  const q=($('#q')?.value||'').toLowerCase(), pf=$('#pf')?.value||'全部';
+  const w=weights(S.mine);
+  let pool=P.filter(p=>!S.mine.includes(p.id)&&!S.gone.includes(p.id))
+    .filter(p=>p.name.toLowerCase().includes(q)&&(pf==='全部'||p.pos===pf))
+    .sort((a,b)=>fit(b,w)-fit(a,w));
+  const cols=[{h:'契合度',f:p=>fit(p,w).toFixed(1)},{h:'總 z',f:p=>total(p).toFixed(1)},
+    {h:'ADP',f:p=>hasAdp(p)?Math.round(p.adp):'-'},
+    {h:'撿便宜',f:p=>{if(!hasAdp(p))return '-';
+      const e=p.adp-(pool.indexOf(p)+1);
+      return `<span class="${e>8?'edge-p':'edge-n'}">${e>0?'+':''}${Math.round(e)}</span>`}}];
+  const t=playerTable(pool.slice(0,250),cols,(p,td)=>{
+    const a=el('button','act','選');a.onclick=()=>{S.mine.push(p.id);save();render()};
+    const b=el('button','act','✕');b.style.marginLeft='4px';
+    b.onclick=()=>{S.gone.push(p.id);save();render()};
+    td.append(a,b);
+  });
+  const dl=$('#dl'); dl.innerHTML=''; dl.append(el('h2',null,'建議選秀順序'),t);
+}
+
+/* ---------- 交易 ---------- */
+function tradeView(app){
+  if(!S.teams){app.append(el('div','card','<h2>交易分析</h2><p class="hint">先到「連結聯盟」輸入 League ID,才抓得到各隊名單。</p>'));return}
+  S.tsel=S.tsel||{out:[],in:[]};
+  const box=el('div','card'); box.style.marginBottom='12px';
+  box.append(el('h2',null,'對手'));
+  const sel=el('select');
+  S.teams.filter(t=>t.id!==S.myTeam).forEach(t=>sel.append(new Option(t.name,t.id)));
+  sel.value=S.oppTeam||sel.value; S.oppTeam=+sel.value;
+  sel.onchange=()=>{S.oppTeam=+sel.value;S.tsel={out:[],in:[]};save();render()};
+  box.append(sel); app.append(box);
+
+  const my=S.teams.find(t=>t.id===S.myTeam), opp=S.teams.find(t=>t.id===S.oppTeam);
+  const row=el('div','row'); app.append(row);
+  [['送出 (我的隊)',my,'out'],['得到 ('+opp.name+')',opp,'in']].forEach(([title,team,key])=>{
+    const c=el('div','card'); c.style.flex='1'; c.style.minWidth='300px';
+    c.append(el('h2',null,title));
+    team.roster.forEach(id=>{
+      const p=byId[id]; if(!p)return;
+      const t=el('span','tag'+(S.tsel[key].includes(id)?' sel':''),`${p.name} <span class="pos">${p.pos} ${total(p).toFixed(1)}</span>`);
+      t.onclick=()=>{S.tsel[key]=S.tsel[key].includes(id)?S.tsel[key].filter(x=>x!==id):[...S.tsel[key],id];save();render()};
+      c.append(t);
+    });
+    row.append(c);
+  });
+
+  // H2H 核心:交易前後我對他能贏幾類
+  const mineNow=my.roster, oppNow=opp.roster;
+  const mineAfter=mineNow.filter(i=>!S.tsel.out.includes(i)).concat(S.tsel.in);
+  const oppAfter=oppNow.filter(i=>!S.tsel.in.includes(i)).concat(S.tsel.out);
+  const wins=(a,b)=>{const A=teamCats(a),B=teamCats(b);return CATS.filter(c=>A[c]>B[c]).length};
+  const w0=wins(mineNow,oppNow), w1=wins(mineAfter,oppAfter);
+  const res=el('div','card'); res.style.marginTop='12px';
+  res.append(el('h2',null,'對上 '+opp.name+' 的類別勝負'));
+  res.append(el('div','big',`${w0}-${9-w0} → <span style="color:${w1>w0?'var(--good)':w1<w0?'var(--bad)':'var(--dim)'}">${w1}-${9-w1}</span>`));
+  const d={}, A=teamCats(mineNow), B=teamCats(mineAfter);
+  CATS.forEach(c=>d[c]=B[c]-A[c]);
+  res.append(el('p','hint','我的各類別變化(交易帶來的淨值):'));
+  res.append(catBars(d,Math.max(1.5,Math.max(...CATS.map(c=>Math.abs(d[c]))))));
+  app.append(res);
+
+  // 自動推薦 1 對 1
+  const w=weights(mineNow), sug=[];
+  mineNow.forEach(o=>oppNow.forEach(i=>{
+    if(!byId[o]||!byId[i])return;
+    const after=wins(mineNow.filter(x=>x!==o).concat(i),oppNow.filter(x=>x!==i).concat(o));
+    const bal=total(byId[i])-total(byId[o]);
+    if(after>w0&&bal<1.5) sug.push({o,i,after,gain:fit(byId[i],w)-fit(byId[o],w),bal});
+  }));
+  sug.sort((a,b)=>b.after-a.after||b.gain-a.gain);
+  const sc=el('div','card'); sc.style.marginTop='12px';
+  sc.append(el('h2',null,'自動推薦 1 換 1'));
+  if(!sug.length)sc.append(el('p','hint','沒有找到能翻盤又不至於明顯虧價值的 1 換 1。試試 2 換 1,或換個對手。'));
+  sug.slice(0,8).forEach(s=>{
+    const p=el('p',null,`送 <b>${byId[s.o].name}</b> → 收 <b style="color:var(--good)">${byId[s.i].name}</b>
+      &nbsp;類別 ${w0}-${9-w0} → ${s.after}-${9-s.after}
+      <span class="hint">(價值差 ${s.bal>0?'+':''}${s.bal.toFixed(1)} —
+      ${s.bal>0.5?'對方吃虧,可能不點頭':s.bal<-0.5?'我方讓價,但類別更好(H2H 可接受)':'價值接近,好談'})</span>`);
+    p.style.margin='4px 0'; sc.append(p);
+  });
+  app.append(sc);
+}
+
+/* ---------- FA ---------- */
+function faView(app){
+  if(!S.teams){app.append(el('div','card','<h2>FA 推薦</h2><p class="hint">先到「連結聯盟」輸入 League ID。</p>'));return}
+  const owned=new Set(S.teams.flatMap(t=>t.roster));
+  const my=S.teams.find(t=>t.id===S.myTeam).roster;
+  const w=weights(my);
+  const fa=P.filter(p=>!owned.has(p.id)).sort((a,b)=>fit(b,w)-fit(a,w));
+  const row=el('div','row'), left=el('div','card grow'), right=el('div','side card');
+  right.append(el('h2',null,'我的隊伍體質'));
+  right.append(catBars(teamCats(my),Math.max(3,my.length*1.2)));
+  const weak=CATS.map(c=>[c,teamCats(my)[c]]).sort((a,b)=>a[1]-b[1]).slice(0,3).map(x=>LBL[x[0]]);
+  right.append(el('p','hint','最弱:<b style="color:var(--bad)">'+weak.join(' · ')+'</b>,下面 FA 已依此加權。'));
+  // 誰該被 drop
+  const worst=[...my].filter(i=>byId[i]).sort((a,b)=>fit(byId[a],w)-fit(byId[b],w)).slice(0,3);
+  right.append(el('h2',null,'考慮 drop'));
+  worst.forEach(i=>right.append(el('p','hint',`${byId[i].name} <span class="pos">${byId[i].pos}</span> · 契合度 ${fit(byId[i],w).toFixed(1)}`)));
+  left.append(el('h2',null,`可撿的自由球員 (${fa.length} 人)`));
+  left.append(playerTable(fa.slice(0,120),
+    [{h:'契合度',f:p=>fit(p,w).toFixed(1)},{h:'總 z',f:p=>total(p).toFixed(1)},
+     {h:'補到',f:p=>CATS.map(c=>[c,catZ(p,c)]).sort((a,b)=>b[1]-a[1]).slice(0,2).map(x=>LBL[x[0]]).join(' ')}]));
+  row.append(left,right); app.append(row);
+}
+
+/* ---------- 連結聯盟 ---------- */
+function leagueView(app){
+  const c=el('div','card'); c.append(el('h2',null,'連結 ESPN 聯盟'));
+  c.innerHTML+=`<p class="hint">在 ESPN 聯盟網址列找 <code>leagueId=</code> 後面那串數字。私人聯盟請先在同一個瀏覽器登入 espn.com。</p>`;
+  const inp=Object.assign(document.createElement('input'),{type:'text',id:'lid',placeholder:'League ID',value:S.leagueId||''});
+  const yr=Object.assign(document.createElement('input'),{type:'text',id:'yr',value:S.year||'2026'}); yr.style.width='70px';
+  const b=el('button','act','抓取'); b.onclick=loadLeague;
+  c.append(inp,' ',yr,' ',b);
+  const st=el('p','hint','',''); st.id='lst'; c.append(st);
+  if(S.teams){
+    c.append(el('h2',null,'我是哪一隊'));
+    const sel=el('select');
+    S.teams.forEach(t=>sel.append(new Option(`${t.name} (${t.roster.length} 人)`,t.id)));
+    sel.value=S.myTeam; sel.onchange=()=>{S.myTeam=+sel.value;save()};
+    c.append(sel);
+    st.innerHTML=`已載入 ${S.teams.length} 隊。`;
+  }
+  app.append(c);
+}
+async function loadLeague(){
+  const id=$('#lid').value.trim(), yr=$('#yr').value.trim(), st=$('#lst');
+  st.className='hint'; st.textContent='抓取中…';
+  const url=`https://lm-api-reads.fantasy.espn.com/apis/v3/games/fba/seasons/${yr}/segments/0/leagues/${id}?view=mTeam&view=mRoster`;
+  try{
+    const r=await fetch(url,{credentials:'include'});
+    if(!r.ok)throw new Error('HTTP '+r.status+(r.status===401?' — 私人聯盟,請先登入 espn.com':''));
+    const d=await r.json();
+    S.leagueId=id; S.year=yr;
+    S.teams=d.teams.map(t=>({id:t.id,name:(t.name||`${t.location||''} ${t.nickname||''}`).trim()||('Team '+t.id),
+      roster:(t.roster?.entries||[]).map(e=>e.playerId)}));
+    S.myTeam=S.myTeam&&S.teams.some(t=>t.id===S.myTeam)?S.myTeam:S.teams[0].id;
+    save(); render();
+  }catch(e){st.className='err';st.textContent='失敗:'+e.message+'(私人聯盟需先在本瀏覽器登入 espn.com)'}
+}
+</script>
