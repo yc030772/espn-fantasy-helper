@@ -13,6 +13,9 @@ POS = {1: "PG", 2: "SG", 3: "SF", 4: "PF", 5: "C"}
 # ESPN stat id -> 名稱(累積量,非場均)
 S = {"PTS": "0", "BLK": "1", "STL": "2", "AST": "3", "REB": "6", "TO": "11",
      "FGM": "13", "FGA": "14", "FTM": "15", "FTA": "16", "3PM": "17", "GP": "42", "MIN": "40"}
+# H2H 9-cat 建議權重 = 1/σ(整隊該類別總分);TO 與 PTS/AST 相關 -0.85,額外壓低
+W = {"PTS": 1.25, "REB": 1.10, "AST": 1.00, "STL": 1.20, "BLK": 0.90,
+     "3PM": 0.95, "TO": 0.60, "FG_imp": 0.90, "FT_imp": 0.75}
 # ESPN 預設 points league 計分
 PTS_SCORING = {"PTS": 1, "REB": 1, "AST": 2, "STL": 4, "BLK": 4, "TO": -2}
 
@@ -55,7 +58,7 @@ def zscores(rows):
         for r in rows:
             r["z" + c] = sign * (r[c] - m) / sd
     for r in rows:
-        r["score"] = sum(r["z" + c] for c in cats + ["TO", "FG_imp", "FT_imp"])
+        r["score"] = sum(W[c] * r["z" + c] for c in cats + ["TO", "FG_imp", "FT_imp"])
     return rows
 
 

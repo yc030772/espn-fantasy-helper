@@ -52,6 +52,7 @@ tbody tr:hover{background:#1d242c}
   <span class="hint" id="src"></span>
   <div class="tabs">
     <button data-t="draft" class="on">選秀</button>
+    <button data-t="all">總分表</button>
     <button data-t="trade">交易</button>
     <button data-t="fa">FA</button>
     <button data-t="league">連結聯盟</button>
@@ -61,17 +62,26 @@ tbody tr:hover{background:#1d242c}
 
 <script>
 const CATS=['PTS','REB','AST','STL','BLK','3PM','TO','FG_imp','FT_imp'];
+// 建議權重 = 1/σ(隊伍該類別總分),TO 因與 PTS/AST 相關 -0.85 額外壓低
+const PRESETS={
+  '均衡(建議)':{PTS:1.25,REB:1.10,AST:1.00,STL:1.20,BLK:0.90,'3PM':0.95,TO:0.60,FG_imp:0.90,FT_imp:0.75},
+  '全部 1.0(純 z)':{PTS:1,REB:1,AST:1,STL:1,BLK:1,'3PM':1,TO:1,FG_imp:1,FT_imp:1},
+  '棄 TO + FT%':{PTS:1.35,REB:1.15,AST:1.20,STL:1.25,BLK:0.95,'3PM':1.00,TO:0,FG_imp:0.95,FT_imp:0},
+  '棄 FG% + BLK':{PTS:1.30,REB:1.05,AST:1.15,STL:1.25,BLK:0,'3PM':1.20,TO:0.60,FG_imp:0,FT_imp:0.95},
+  '棄 AST + 3PM(大隻佬)':{PTS:1.25,REB:1.30,AST:0,STL:1.15,BLK:1.30,'3PM':0,TO:0.70,FG_imp:1.15,FT_imp:0.60},
+};
 const LBL={PTS:'PTS',REB:'REB',AST:'AST',STL:'STL',BLK:'BLK','3PM':'3PM',TO:'TO',FG_imp:'FG%',FT_imp:'FT%'};
 const $=s=>document.querySelector(s), el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e};
 const S=JSON.parse(localStorage.getItem('fbb')||'{}');
 const save=()=>localStorage.setItem('fbb',JSON.stringify(S));
 S.mine=S.mine||[]; S.gone=S.gone||[];
+S.w=S.w||{...PRESETS['均衡(建議)']}; S.preset=S.preset||'均衡(建議)';
 let P=[], byId={}, tab='draft';
 
 // 出賽數折算:H2H 每週對戰,受傷坐板凳的球員拿不到分
 const durability=p=>S.gp===false?1:Math.min(1,(p.GP+8)/70);
 const catZ=(p,c)=>p['z'+c]*durability(p);
-const total=p=>CATS.reduce((s,c)=>s+catZ(p,c),0);
+const total=p=>CATS.reduce((s,c)=>s+S.w[c]*catZ(p,c),0);   // 加權總分
 const hasAdp=p=>p.adp&&p.adp<140;   // 140 = ESPN 未排名的預設值
 
 fetch('data.json').then(r=>r.json()).then(d=>{
@@ -88,6 +98,7 @@ document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
 
 /* ---------- 陣容 / 分類強弱 ---------- */
 const teamCats=ids=>{const t={};CATS.forEach(c=>t[c]=ids.reduce((s,i)=>s+(byId[i]?catZ(byId[i],c):0),0));return t};
+const teamW=ids=>{const t=teamCats(ids);CATS.forEach(c=>t[c]*=S.w[c]);return t};
 // 弱項加權:我缺的類別,該類別的球員對我更值錢
 function weights(ids){
   const t=teamCats(ids), n=Math.max(ids.length,1), w={};
@@ -98,7 +109,7 @@ function weights(ids){
   return w;
 }
 const fit=(p,w)=>{
-  const raw=total(p), wt=CATS.reduce((s,c)=>s+w[c]*catZ(p,c),0);
+  const raw=total(p), wt=CATS.reduce((s,c)=>s+w[c]*S.w[c]*catZ(p,c),0);
   return raw*(1-w._mix)+wt*w._mix;
 };
 
@@ -118,10 +129,11 @@ function catBars(t,scale){
 }
 
 /* ---------- 表格 ---------- */
-function playerTable(list,cols,rowAct){
+function playerTable(list,cols,rowAct,onSort){
   const wrap=el('div','scroll'), tb=el('table');
   tb.innerHTML='<thead><tr><th class="l">#</th><th class="l">球員</th><th class="l">POS</th><th>GP</th><th>MIN</th>'
     +cols.map(c=>`<th>${c.h}</th>`).join('')+'<th></th></tr></thead>';
+  if(onSort)tb.querySelectorAll('th').forEach((th,i)=>{if(i>=5&&i-5<cols.length)th.onclick=()=>onSort(cols[i-5])});
   const body=el('tbody');
   list.forEach((p,i)=>{
     const tr=el('tr');
@@ -139,7 +151,7 @@ const num=(k,d=1)=>({h:k,f:p=>(p[k]??0).toFixed(d)});
 function render(){
   const app=$('#app'); app.innerHTML='';
   if(!P.length){app.append(el('p','hint','載入中…'));return}
-  ({draft:draftView,trade:tradeView,fa:faView,league:leagueView})[tab](app);
+  ({draft:draftView,all:allView,trade:tradeView,fa:faView,league:leagueView})[tab](app);
 }
 
 function draftView(app){
@@ -196,6 +208,63 @@ function redrawDraft(){
   const dl=$('#dl'); dl.innerHTML=''; dl.append(el('h2',null,'建議選秀順序'),t);
 }
 
+/* ---------- 總分表(全部球員 + 可調權重) ---------- */
+function allView(app){
+  const wbox=el('div','card'); wbox.style.marginBottom='12px';
+  wbox.append(el('h2',null,'類別權重'));
+  const ps=el('select');
+  Object.keys(PRESETS).forEach(k=>ps.append(new Option(k,k)));
+  ps.append(new Option('自訂','自訂')); ps.value=S.preset;
+  ps.onchange=()=>{S.preset=ps.value;if(PRESETS[ps.value])S.w={...PRESETS[ps.value]};save();render()};
+  wbox.append(ps,' ');
+  CATS.forEach(c=>{
+    const g=el('span'); g.style.cssText='display:inline-block;margin:4px 10px 0 0';
+    g.append(el('span','pos',LBL[c]+' '));
+    const i=Object.assign(document.createElement('input'),{type:'number',step:'0.05',min:'0',max:'3',value:S.w[c]});
+    i.style.width='62px';
+    i.onchange=()=>{S.w[c]=parseFloat(i.value)||0;S.preset='自訂';save();render()};
+    g.append(i); wbox.append(g);
+  });
+  wbox.append(el('p','hint','權重建議 = 1/σ(整隊該類別總分):類別內差距越大,多一單位 z 越難翻盤,權重越低。TO 因與 PTS/AST 相關 −0.85,額外壓到 0.6。設 0 = 直接棄掉該類別。<br>改權重會同時影響「選秀 / 交易 / FA」三頁。'));
+  app.append(wbox);
+
+  S.sort=S.sort||'total'; S.q2=S.q2||'';
+  const bar=el('div','card'); bar.style.marginBottom='12px';
+  const q=Object.assign(document.createElement('input'),{type:'text',placeholder:'球員名',value:S.q2});
+  q.oninput=()=>{S.q2=q.value;drawAll()};
+  bar.append('搜尋 ',q,' ');
+  const pf=el('select'); ['全部','PG','SG','SF','PF','C'].forEach(o=>pf.append(new Option(o,o)));
+  pf.id='pf2'; pf.onchange=drawAll; bar.append(pf,' ');
+  const dl=el('button','act','下載 CSV'); dl.onclick=downloadCsv; bar.append(dl);
+  bar.append(el('span','hint',' · 點欄位標題可排序'));
+  app.append(bar);
+  const box=el('div','card'); box.id='allbox'; app.append(box);
+  drawAll();
+}
+const allCols=()=>[{h:'總分',k:'total',f:p=>`<b>${total(p).toFixed(2)}</b>`}]
+  .concat(CATS.map(c=>({h:LBL[c],k:c,f:p=>{const v=S.w[c]*catZ(p,c);
+    return `<span class="${v>0.6?'mine':v<-0.6?'edge-n':''}" style="${v<-0.6?'color:var(--bad)':''}">${v.toFixed(2)}</span>`}})))
+  .concat([{h:'ADP',k:'adp',f:p=>hasAdp(p)?Math.round(p.adp):'-'}]);
+function allList(){
+  const q=(S.q2||'').toLowerCase(), pf=$('#pf2')?.value||'全部';
+  const key=p=>S.sort==='total'?total(p):S.sort==='adp'?-(hasAdp(p)?p.adp:999):S.w[S.sort]*catZ(p,S.sort);
+  return P.filter(p=>p.name.toLowerCase().includes(q)&&(pf==='全部'||p.pos===pf)).sort((a,b)=>key(b)-key(a));
+}
+function drawAll(){
+  const list=allList(), box=$('#allbox'); box.innerHTML='';
+  box.append(el('h2',null,`全部球員加權總分 (${list.length} 人,依 ${S.sort==='total'?'總分':LBL[S.sort]||'ADP'} 排序)`));
+  box.append(playerTable(list,allCols(),null,c=>{S.sort=c.k;save();drawAll()}));
+}
+function downloadCsv(){
+  const rows=allList();
+  const head=['排名','球員','POS','GP','MIN','總分',...CATS.map(c=>LBL[c]),'ADP','ESPN排名'];
+  const body=rows.map((p,i)=>[i+1,p.name,p.pos,p.GP,p.MIN,total(p).toFixed(3),
+    ...CATS.map(c=>(S.w[c]*catZ(p,c)).toFixed(3)),hasAdp(p)?Math.round(p.adp):'',p.espn_rank||'']);
+  const csv='\ufeff'+[head,...body].map(r=>r.map(x=>`"${x}"`).join(',')).join('\n');
+  const a=el('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download='fantasy_總分.csv'; a.click();
+}
+
 /* ---------- 交易 ---------- */
 function tradeView(app){
   if(!S.teams){app.append(el('div','card','<h2>交易分析</h2><p class="hint">先到「連結聯盟」輸入 League ID,才抓得到各隊名單。</p>'));return}
@@ -226,11 +295,15 @@ function tradeView(app){
   const mineNow=my.roster, oppNow=opp.roster;
   const mineAfter=mineNow.filter(i=>!S.tsel.out.includes(i)).concat(S.tsel.in);
   const oppAfter=oppNow.filter(i=>!S.tsel.in.includes(i)).concat(S.tsel.out);
-  const wins=(a,b)=>{const A=teamCats(a),B=teamCats(b);return CATS.filter(c=>A[c]>B[c]).length};
+  const LIVE=CATS.filter(c=>S.w[c]>0);   // 權重 0 = 已棄掉,不列入勝負
+  const wins=(a,b)=>{const A=teamCats(a),B=teamCats(b);return LIVE.filter(c=>A[c]>B[c]).length};
   const w0=wins(mineNow,oppNow), w1=wins(mineAfter,oppAfter);
   const res=el('div','card'); res.style.marginTop='12px';
   res.append(el('h2',null,'對上 '+opp.name+' 的類別勝負'));
-  res.append(el('div','big',`${w0}-${9-w0} → <span style="color:${w1>w0?'var(--good)':w1<w0?'var(--bad)':'var(--dim)'}">${w1}-${9-w1}</span>`));
+  const N=LIVE.length;
+  res.append(el('div','big',`${w0}-${N-w0} → <span style="color:${w1>w0?'var(--good)':w1<w0?'var(--bad)':'var(--dim)'}">${w1}-${N-w1}</span>`)
+    );
+  if(N<9)res.append(el('p','hint',`只計入權重 >0 的 ${N} 類(其餘已棄)。`));
   const d={}, A=teamCats(mineNow), B=teamCats(mineAfter);
   CATS.forEach(c=>d[c]=B[c]-A[c]);
   res.append(el('p','hint','我的各類別變化(交易帶來的淨值):'));
