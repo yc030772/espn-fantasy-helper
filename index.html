@@ -39,6 +39,11 @@ tbody tr{border-left:3px solid transparent}
   border:1px solid rgba(255,255,255,.28);text-shadow:0 1px 2px rgba(0,0,0,.6)}
 .posb{font-size:10px;font-weight:700;padding:1px 6px;border-radius:3px;background:#1e2630}
 tbody tr:hover{background:#1d242c}
+tbody tr.rec{background:#14304f}
+tbody tr.rec:hover{background:#1a3c63}
+tbody tr.rec td{border-top-color:#25507f}
+.rechip{font-size:10px;font-weight:700;padding:1px 6px;border-radius:3px;
+  background:var(--accent);color:#06101f;margin-left:6px}
 .scroll{max-height:66vh;overflow:auto}
 .pos{color:var(--dim);font-size:11px}
 .pill{font-size:10px;padding:1px 5px;border-radius:4px;background:#2a2016;color:var(--warn);margin-left:4px}
@@ -126,14 +131,16 @@ function weights(ids){
   const t=teamCats(ids), n=Math.max(ids.length,1), w={};
   const avg=CATS.map(c=>t[c]/n), m=Math.max(...avg.map(Math.abs),.5);
   CATS.forEach((c,i)=>w[c]=Math.min(1.6,Math.max(.5,1-avg[i]/m)));
-  // 前幾輪先拿最好的人(BPA),陣容成形後才愈來愈看需求
-  w._mix=Math.min(.5,ids.length/12);
   return w;
 }
-const fit=(p,w)=>{
-  const raw=total(p), wt=CATS.reduce((s,c)=>s+w[c]*S.w[c]*catZ(p,c),0);
-  return raw*(1-w._mix)+wt*w._mix;
-};
+// 補洞分:完全以「我缺什麼」加權。只用來挑出建議人選,不參與排序。
+const fit=(p,w)=>CATS.reduce((s,c)=>s+w[c]*S.w[c]*catZ(p,c),0);
+// 建議名單 = 補洞分最高的前 n 名(隊上還沒人時沒有弱項訊號,不標)
+function recSet(pool,ids,n=8){
+  if(!ids.length)return new Set();
+  const w=weights(ids);
+  return new Set([...pool].sort((a,b)=>fit(b,w)-fit(a,w)).slice(0,n).map(p=>p.id));
+}
 
 function catBars(t,scale){
   const box=el('div');
@@ -151,7 +158,7 @@ function catBars(t,scale){
 }
 
 /* ---------- 表格 ---------- */
-function playerTable(list,cols,rowAct,onSort){
+function playerTable(list,cols,rowAct,onSort,rec){
   const wrap=el('div','scroll'), tb=el('table');
   tb.innerHTML='<thead><tr><th class="l">#</th><th class="l">球員</th><th class="l">隊</th><th class="l">POS</th><th>GP</th><th>MIN</th>'
     +cols.map(c=>`<th>${c.h}</th>`).join('')+'<th></th></tr></thead>';
@@ -159,11 +166,14 @@ function playerTable(list,cols,rowAct,onSort){
   const body=el('tbody');
   list.forEach((p,i)=>{
     const tr=el('tr');
+    if(rec&&rec.has(p.id))tr.classList.add('rec');
     if(S.mine.includes(p.id))tr.classList.add('mine');
     if(S.gone.includes(p.id))tr.classList.add('gone');
     tr.style.borderLeftColor=tm(p).color;
     tr.innerHTML=`<td class="l">${i+1}</td>`
-      +`<td class="l name">${logo(p)}<span>${p.name}</span>${p.injury&&p.injury!=='ACTIVE'?`<span class="pill">${p.injury}</span>`:''}</td>`
+      +`<td class="l name">${logo(p)}<span>${p.name}</span>`
+      +`${rec&&rec.has(p.id)?'<span class="rechip">建議</span>':''}`
+      +`${p.injury&&p.injury!=='ACTIVE'?`<span class="pill">${p.injury}</span>`:''}</td>`
       +`<td class="l">${abbrChip(p)}</td><td class="l">${posBadge(p)}</td>`
       +`<td>${p.GP}</td><td>${p.MIN}</td>`+cols.map(c=>`<td>${c.f(p)}</td>`).join('');
     const td=el('td'); if(rowAct)rowAct(p,td); tr.append(td); body.append(tr);
@@ -180,9 +190,6 @@ function render(){
 }
 
 function draftView(app){
-  const w=weights(S.mine);
-  const pool=P.filter(p=>!S.mine.includes(p.id)&&!S.gone.includes(p.id))
-              .sort((a,b)=>fit(b,w)-fit(a,w));
   const bar=el('div','card',''); bar.style.marginBottom='12px';
   bar.append(el('span',null,'搜尋 '),Object.assign(document.createElement('input'),
     {type:'text',id:'q',placeholder:'球員名',oninput:redrawDraft}));
@@ -205,13 +212,13 @@ function draftView(app){
   if(S.mine.length){
     me.append(catBars(teamCats(S.mine),Math.max(3,S.mine.length*1.2)));
     const weak=CATS.map(c=>[c,teamCats(S.mine)[c]]).sort((a,b)=>a[1]-b[1]).slice(0,3).map(x=>LBL[x[0]]);
-    me.append(el('p','hint','最弱三項:<b style="color:var(--bad)">'+weak.join(' · ')+'</b><br>下面排名已依此加權。強項會自動降權(等於幫你 punt)。'));
+    me.append(el('p','hint','最弱三項:<b style="color:var(--bad)">'+weak.join(' · ')+'</b><br>排序一律照總分;能補這幾項的人會<b style="color:var(--accent)">反白標「建議」</b>。'));
     const ul=el('div');
     S.mine.forEach(id=>{const p=byId[id];
       const t=el('span','tag sel',`${logo(p)}${p.name}`); t.style.borderLeftColor=tm(p).color;
       t.onclick=()=>{S.mine=S.mine.filter(x=>x!==id);save();render()};ul.append(t)});
     me.append(ul);
-  } else me.append(el('p','hint','按右側「選」把球員加進我的隊伍,按「X」標記被別人選走。<br>加了人之後排名會依你的弱項重新加權。'));
+  } else me.append(el('p','hint','按右側「選」把球員加進我的隊伍,按「X」標記被別人選走。<br>排序永遠照總分。等隊上有人、看得出弱項後,會開始反白標「建議」。'));
   redrawDraft();
 }
 function redrawDraft(){
@@ -219,8 +226,9 @@ function redrawDraft(){
   const w=weights(S.mine);
   let pool=P.filter(p=>!S.mine.includes(p.id)&&!S.gone.includes(p.id))
     .filter(p=>p.name.toLowerCase().includes(q)&&(pf==='全部'||p.pos===pf))
-    .sort((a,b)=>fit(b,w)-fit(a,w));
-  const cols=[{h:'契合度',f:p=>hot(fit(p,w))},{h:'總分',f:p=>hot(total(p))},
+    .sort((a,b)=>total(b)-total(a));                 // 排序永遠是總分
+  const rec=recSet(pool.slice(0,120),S.mine);        // 建議只從前 120 名裡挑
+  const cols=[{h:'總分',f:p=>hot(total(p))},{h:'補洞',f:p=>S.mine.length?fit(p,w).toFixed(1):'-'},
     {h:'ADP',f:p=>hasAdp(p)?Math.round(p.adp):'-'},
     {h:'$',f:p=>p.auction?`<span style="color:var(--warn)">$${p.auction}</span>`:'-'},
     {h:'撿便宜',f:p=>{if(!hasAdp(p))return '-';
@@ -231,8 +239,8 @@ function redrawDraft(){
     const b=el('button','act','✕');b.style.marginLeft='4px';
     b.onclick=()=>{S.gone.push(p.id);save();render()};
     td.append(a,b);
-  });
-  const dl=$('#dl'); dl.innerHTML=''; dl.append(el('h2',null,'建議選秀順序'),t);
+  },null,rec);
+  const dl=$('#dl'); dl.innerHTML=''; dl.append(el('h2',null,'球員排名(依總分)'),t);
 }
 
 /* ---------- 總分表(全部球員 + 可調權重) ---------- */
@@ -374,20 +382,22 @@ function faView(app){
   const owned=new Set(S.teams.flatMap(t=>t.roster));
   const my=S.teams.find(t=>t.id===S.myTeam).roster;
   const w=weights(my);
-  const fa=P.filter(p=>!owned.has(p.id)).sort((a,b)=>fit(b,w)-fit(a,w));
+  const fa=P.filter(p=>!owned.has(p.id)).sort((a,b)=>total(b)-total(a));
+  const rec=recSet(fa.slice(0,80),my);
   const row=el('div','row'), left=el('div','card grow'), right=el('div','side card');
   right.append(el('h2',null,'我的隊伍體質'));
   right.append(catBars(teamCats(my),Math.max(3,my.length*1.2)));
   const weak=CATS.map(c=>[c,teamCats(my)[c]]).sort((a,b)=>a[1]-b[1]).slice(0,3).map(x=>LBL[x[0]]);
-  right.append(el('p','hint','最弱:<b style="color:var(--bad)">'+weak.join(' · ')+'</b>,下面 FA 已依此加權。'));
+  right.append(el('p','hint','最弱:<b style="color:var(--bad)">'+weak.join(' · ')+'</b>。FA 依總分排序,能補這幾項的人反白標「建議」。'));
   // 誰該被 drop
   const worst=[...my].filter(i=>byId[i]).sort((a,b)=>fit(byId[a],w)-fit(byId[b],w)).slice(0,3);
   right.append(el('h2',null,'考慮 drop'));
   worst.forEach(i=>right.append(el('p','hint',`${byId[i].name} <span class="pos">${byId[i].pos}</span> · 契合度 ${fit(byId[i],w).toFixed(1)}`)));
   left.append(el('h2',null,`可撿的自由球員 (${fa.length} 人)`));
   left.append(playerTable(fa.slice(0,120),
-    [{h:'契合度',f:p=>hot(fit(p,w))},{h:'總分',f:p=>hot(total(p))},
-     {h:'補到',f:p=>CATS.map(c=>[c,catZ(p,c)]).sort((a,b)=>b[1]-a[1]).slice(0,2).map(x=>LBL[x[0]]).join(' ')}]));
+    [{h:'總分',f:p=>hot(total(p))},{h:'補洞',f:p=>fit(p,w).toFixed(1)},
+     {h:'補到',f:p=>CATS.map(c=>[c,catZ(p,c)]).sort((a,b)=>b[1]-a[1]).slice(0,2).map(x=>LBL[x[0]]).join(' ')}],
+    null,null,rec));
   row.append(left,right); app.append(row);
 }
 
