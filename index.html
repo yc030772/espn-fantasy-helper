@@ -63,6 +63,26 @@ tbody tr.rec td{border-top-color:#25507f}
 .tag.sel{background:var(--accent);color:#06101f;border-color:var(--accent)}
 .big{font-size:22px;font-weight:600}
 .err{color:var(--bad);font-size:12px}
+.draftbar{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.clock{padding:4px 12px;border-radius:6px;background:#1e2630;border:1px solid var(--line);font-size:13px}
+.clock.me{background:var(--accent);color:#06101f;border-color:var(--accent);font-weight:600}
+button.act.pick{background:var(--accent);color:#06101f;border-color:var(--accent);font-weight:700}
+.strow{display:grid;grid-template-columns:38px 1fr 34px 44px;gap:8px;align-items:center;margin:6px 0;font-size:12px}
+.strow b{font-weight:500;color:var(--dim)}
+.strow .rk{text-align:right;font-weight:700}
+.strow .gap{text-align:right;color:var(--dim);font-variant-numeric:tabular-nums}
+.strow .bar i{left:0}
+.tick{position:absolute;top:0;bottom:0;width:2px;background:#7d8794;opacity:.85}
+.board{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.bcol{background:#12171d;border:1px solid var(--line);border-radius:8px;padding:7px}
+.bcol.bme{border-color:var(--accent);background:#131f2e}
+.bhead{font-size:12px;font-weight:600;margin-bottom:6px;color:var(--fg)}
+.bp{display:flex;align-items:center;gap:5px;font-size:11px;padding:2px 4px;margin:2px 0;
+  border-left:3px solid var(--line);background:#1a212a;border-radius:3px}
+.bp img{width:14px;height:14px;object-fit:contain;background:#e9edf2;border-radius:50%;padding:1px}
+.bp span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+table.matrix td{border-top:1px solid #1d232b}
+.rksup{font-size:9px;color:var(--dim);margin-left:2px}
 </style>
 
 <header>
@@ -92,9 +112,24 @@ const LBL={PTS:'PTS',REB:'REB',AST:'AST',STL:'STL',BLK:'BLK','3PM':'3PM',TO:'TO'
 const $=s=>document.querySelector(s), el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e};
 const S=JSON.parse(localStorage.getItem('fbb')||'{}');
 const save=()=>localStorage.setItem('fbb',JSON.stringify(S));
-S.mine=S.mine||[]; S.gone=S.gone||[];
+S.picks=S.picks||[]; S.nTeams=S.nTeams||12; S.slot=S.slot||1;
+S.mine=[]; S.gone=[];   // 由 picks 推導,見 syncDraft()
 S.w=S.w||{...PRESETS['均衡(建議)']}; S.preset=S.preset||'均衡(建議)';
 let P=[], byId={}, T={}, tab='draft';
+/* 蛇型:第 0 輪 0→n-1,第 1 輪 n-1→0,依此類推 */
+const teamOf=i=>{const n=S.nTeams,r=Math.floor(i/n),p=i%n;return r%2?n-1-p:p};
+const rosterOf=t=>S.picks.filter((_,i)=>teamOf(i)===t);
+const onClock=()=>teamOf(S.picks.length);
+const teamName=t=>t===S.slot-1?'我':`Team ${t+1}`;
+/* 我下一次輪到的是第幾順位(1-based),沒有則 null */
+function nextMyPick(){
+  for(let i=S.picks.length;i<S.nTeams*14;i++) if(teamOf(i)===S.slot-1) return i+1;
+  return null;
+}
+function syncDraft(){
+  S.mine=rosterOf(S.slot-1);
+  S.gone=S.picks.filter(id=>!S.mine.includes(id));
+}
 const tm=p=>T[p.team]||{abbr:'FA',color:'#39424e',logo:''};
 const logo=p=>tm(p).logo?`<img class="logo" src="${tm(p).logo}" alt="" loading="lazy">`:'';
 const posBadge=p=>`<span class="posb" style="color:var(--${p.pos})">${p.pos}</span>`;
@@ -186,61 +221,189 @@ const num=(k,d=1)=>({h:k,f:p=>(p[k]??0).toFixed(d)});
 function render(){
   const app=$('#app'); app.innerHTML='';
   if(!P.length){app.append(el('p','hint','載入中…'));return}
+  syncDraft();
   ({draft:draftView,all:allView,trade:tradeView,fa:faView,league:leagueView})[tab](app);
 }
 
 function draftView(app){
+  /* --- 最上面:聯盟設定與現在輪到誰 --- */
+  const setup=el('div','card'); setup.style.marginBottom='12px';
+  setup.append(el('h2',null,'蛇型選秀設定'));
+  const line=el('div','draftbar');
+  const mk=(label,val,min,max,on)=>{
+    const g=el('span'); g.append(el('span','pos',label+' '));
+    const i=Object.assign(document.createElement('input'),{type:'number',min,max,value:val});
+    i.style.width='58px'; i.onchange=()=>on(Math.max(min,Math.min(max,+i.value||min)));
+    g.append(i); return g;
+  };
+  line.append(mk('隊伍數',S.nTeams,2,20,v=>{S.nTeams=v;S.slot=Math.min(S.slot,v);save();render()}));
+  line.append(mk('我的順位',S.slot,1,S.nTeams,v=>{S.slot=v;save();render()}));
+
+  const i=S.picks.length, rd=Math.floor(i/S.nTeams)+1, pk=i%S.nTeams+1, t=onClock();
+  const mine=t===S.slot-1;
+  const clock=el('span','clock'+(mine?' me':''));
+  clock.innerHTML=`第 ${rd} 輪 · 第 ${pk} 順位 &nbsp;→&nbsp; <b>${mine?'輪到你':teamName(t)}</b>`;
+  line.append(clock);
+  const nx=nextMyPick();
+  if(!mine&&nx) line.append(el('span','hint',`你的下一手是第 ${nx} 順位(還要等 ${nx-i-1} 人)`));
+
+  const un=el('button','act','復原上一手'); un.onclick=()=>{S.picks.pop();save();render()};
+  const rs=el('button','act','重置選秀'); rs.onclick=()=>{if(confirm('清空整個選秀板?')){S.picks=[];save();render()}};
+  line.append(un,rs);
+  const gp=el('label','chk'); gp.innerHTML='<input type="checkbox"'+(S.gp!==false?' checked':'')+'> 考慮出賽數';
+  gp.querySelector('input').onchange=e=>{S.gp=e.target.checked;save();render()};
+  line.append(gp);
+  setup.append(line);
+  app.append(setup);
+
+  /* --- 搜尋列 --- */
   const bar=el('div','card',''); bar.style.marginBottom='12px';
   bar.append(el('span',null,'搜尋 '),Object.assign(document.createElement('input'),
     {type:'text',id:'q',placeholder:'球員名',oninput:redrawDraft}));
   const sel=el('select'); sel.id='pf';
   ['全部','PG','SG','SF','PF','C'].forEach(o=>sel.append(new Option(o,o)));
-  sel.onchange=redrawDraft; bar.append(' ',sel,' ');
-  const gp=el('label','chk'); gp.innerHTML='<input type="checkbox" id="gp"'+(S.gp!==false?' checked':'')+'> 考慮出賽數(H2H 建議開)';
-  gp.querySelector('input').onchange=e=>{S.gp=e.target.checked;save();render()};
-  bar.append(gp);
-  const rst=el('button','act','清空我的隊伍'); rst.style.marginLeft='10px';
-  rst.onclick=()=>{S.mine=[];S.gone=[];save();render()}; bar.append(rst);
+  sel.onchange=redrawDraft; bar.append(' ',sel);
   app.append(bar);
 
-  const row=el('div','row'), left=el('div','card grow'), right=el('div','side');
+  const row=el('div','row'), left=el('div','card grow'), right=el('div','side card');
   left.id='dl'; app.append(row); row.append(left,right);
-
-  right.append(Object.assign(el('div','card'),{}));
-  const me=right.querySelector('.card');
-  me.append(el('h2',null,`我的隊伍 (${S.mine.length})`));
-  if(S.mine.length){
-    me.append(catBars(teamCats(S.mine),Math.max(3,S.mine.length*1.2)));
-    const weak=CATS.map(c=>[c,teamCats(S.mine)[c]]).sort((a,b)=>a[1]-b[1]).slice(0,3).map(x=>LBL[x[0]]);
-    me.append(el('p','hint','最弱三項:<b style="color:var(--bad)">'+weak.join(' · ')+'</b><br>排序一律照總分;能補這幾項的人會<b style="color:var(--accent)">反白標「建議」</b>。'));
-    const ul=el('div');
-    S.mine.forEach(id=>{const p=byId[id];
-      const t=el('span','tag sel',`${logo(p)}${p.name}`); t.style.borderLeftColor=tm(p).color;
-      t.onclick=()=>{S.mine=S.mine.filter(x=>x!==id);save();render()};ul.append(t)});
-    me.append(ul);
-  } else me.append(el('p','hint','按右側「選」把球員加進我的隊伍,按「X」標記被別人選走。<br>排序永遠照總分。等隊上有人、看得出弱項後,會開始反白標「建議」。'));
+  right.id='stand';
+  drawStandings();
   redrawDraft();
+  app.append(standingsTable());
+  app.append(boardView());
+}
+
+/* --- 9 類別相對排名:我 vs 其他 11 隊 --- */
+function drawStandings(){
+  const box=$('#stand'); if(!box)return; box.innerHTML='';
+  box.append(el('h2',null,`類別相對排名 (${S.nTeams} 隊)`));
+  if(!S.picks.length){
+    box.append(el('p','hint','開始選人之後,這裡會即時顯示你在每個類別排第幾、跟第一名差多少。'));
+    return;
+  }
+  const all=[...Array(S.nTeams).keys()].map(t=>({t,cat:teamCats(rosterOf(t))}));
+  const me=all[S.slot-1];
+  let wins=0;
+  CATS.forEach(c=>{
+    const sorted=[...all].sort((a,b)=>b.cat[c]-a.cat[c]);
+    const rank=sorted.findIndex(x=>x.t===me.t)+1;
+    const best=sorted[0].cat[c], v=me.cat[c];
+    const gapTop=v-best, ahead=rank>1?sorted[rank-2].cat[c]-v:0;
+    if(rank<=Math.ceil(S.nTeams/2))wins++;
+    const r=el('div','strow');
+    r.innerHTML=`<b>${LBL[c]}</b>`;
+    const bar=el('div','bar');
+    const spread=Math.max(...all.map(x=>x.cat[c]))-Math.min(...all.map(x=>x.cat[c]))||1;
+    const lo=Math.min(...all.map(x=>x.cat[c]));
+    const fill=el('i'); fill.style.cssText=`left:0;width:${(v-lo)/spread*100}%;background:${
+      rank<=3?'var(--good)':rank<=S.nTeams/2?'var(--warn)':'var(--bad)'}`;
+    bar.append(fill);
+    all.forEach(x=>{if(x.t===me.t)return;const d=el('span','tick');
+      d.style.left=((x.cat[c]-lo)/spread*100)+'%';bar.append(d)});
+    r.append(bar);
+    const rk=el('span','rk');
+    rk.style.color=rank<=3?'var(--good)':rank<=S.nTeams/2?'var(--warn)':'var(--bad)';
+    rk.textContent=`#${rank}`;
+    r.append(rk);
+    r.append(el('span','gap',rank===1?'領先 '+(v-sorted[1].cat[c]).toFixed(1):gapTop.toFixed(1)));
+    r.title=`我 ${v.toFixed(1)} · 第一名 ${best.toFixed(1)}`+(rank>1?` · 追上前一名還差 ${ahead.toFixed(1)}`:'');
+    box.append(r);
+  });
+  box.append(el('p','hint',`目前站在前段的類別:<b style="color:${wins>=5?'var(--good)':'var(--bad)'}">${wins}/9</b>
+    (H2H 需要贏 5 類)。灰點是其他隊的位置,長條是你。`));
+  const weak=CATS.map(c=>{
+    const sorted=[...all].sort((a,b)=>b.cat[c]-a.cat[c]);
+    return [c,sorted.findIndex(x=>x.t===me.t)+1];
+  }).sort((a,b)=>b[1]-a[1]).slice(0,3).map(x=>LBL[x[0]]);
+  box.append(el('p','hint','排最後面的三項:<b style="color:var(--bad)">'+weak.join(' · ')
+    +'</b><br>能補這幾項的人會<b style="color:var(--accent)">反白標「建議」</b>,但排序一律照總分。'));
+}
+
+/* --- 各隊 × 各類別 對照表 --- */
+function standingsTable(){
+  const box=el('div','card'); box.style.marginTop='12px';
+  box.append(el('h2',null,'各隊 × 各類別 對照表'));
+  if(!S.picks.length){
+    box.append(el('p','hint','開始選人之後,這裡會列出全部 '+S.nTeams+' 隊在 9 個類別的數字與名次。'));
+    return box;
+  }
+  const all=[...Array(S.nTeams).keys()].map(t=>({t,cat:teamCats(rosterOf(t)),n:rosterOf(t).length}));
+  // 每個類別的名次
+  const rk={};
+  CATS.forEach(c=>{
+    const sorted=[...all].sort((a,b)=>b.cat[c]-a.cat[c]);
+    rk[c]={}; sorted.forEach((x,i)=>rk[c][x.t]=i+1);
+  });
+  const half=Math.ceil(S.nTeams/2);
+  const wrap=el('div','scroll'), tb=el('table','matrix');
+  tb.innerHTML='<thead><tr><th class="l">隊伍</th><th>人數</th>'
+    +CATS.map(c=>`<th>${LBL[c]}</th>`).join('')+'<th>前段</th></tr></thead>';
+  const body=el('tbody');
+  // 依「站上前段的類別數」排,強隊在上
+  const score=x=>CATS.filter(c=>rk[c][x.t]<=half).length;
+  [...all].sort((a,b)=>score(b)-score(a)).forEach(x=>{
+    const tr=el('tr'); if(x.t===S.slot-1)tr.classList.add('rec');
+    let html=`<td class="l"><b>${teamName(x.t)}</b></td><td>${x.n}</td>`;
+    CATS.forEach(c=>{
+      const r=rk[c][x.t];
+      const col=r<=3?'var(--good)':r<=half?'var(--warn)':'var(--bad)';
+      html+=`<td><span style="color:${col}">${x.cat[c].toFixed(1)}</span>`
+           +`<sup class="rksup">${r}</sup></td>`;
+    });
+    const w=score(x);
+    html+=`<td><b style="color:${w>=5?'var(--good)':'var(--bad)'}">${w}/9</b></td>`;
+    tr.innerHTML=html; body.append(tr);
+  });
+  tb.append(body); wrap.append(tb); box.append(wrap);
+  box.append(el('p','hint','數字 = 該隊該類別的 z 總和(已套用你的權重),右上小字 = 名次。'
+    +`綠 = 前 3、黃 = 前段、紅 = 後段。「前段」= 排在前 ${half} 名的類別數,H2H 需要 5 類。`));
+  return box;
+}
+
+/* --- 選秀板:每隊已選到的人 --- */
+function boardView(){
+  const box=el('div','card'); box.style.marginTop='12px';
+  box.append(el('h2',null,`選秀板 (已選 ${S.picks.length} 人)`));
+  const grid=el('div','board');
+  for(let t=0;t<S.nTeams;t++){
+    const col=el('div','bcol'+(t===S.slot-1?' bme':''));
+    col.append(el('div','bhead',`${teamName(t)} <span class="pos">${rosterOf(t).length}</span>`));
+    S.picks.forEach((id,i)=>{
+      if(teamOf(i)!==t)return;
+      const p=byId[id]; if(!p)return;
+      const d=el('div','bp',`${logo(p)}<span>${p.name}</span>`);
+      d.style.borderLeftColor=tm(p).color;
+      d.title=`第 ${i+1} 順位 · 總分 ${total(p).toFixed(1)}`;
+      col.append(d);
+    });
+    grid.append(col);
+  }
+  box.append(grid);
+  return box;
 }
 function redrawDraft(){
   const q=($('#q')?.value||'').toLowerCase(), pf=$('#pf')?.value||'全部';
   const w=weights(S.mine);
-  let pool=P.filter(p=>!S.mine.includes(p.id)&&!S.gone.includes(p.id))
+  let pool=P.filter(p=>!S.picks.includes(p.id))
     .filter(p=>p.name.toLowerCase().includes(q)&&(pf==='全部'||p.pos===pf))
     .sort((a,b)=>total(b)-total(a));                 // 排序永遠是總分
   const rec=recSet(pool.slice(0,120),S.mine);        // 建議只從前 120 名裡挑
+  const t=onClock(), mineTurn=t===S.slot-1;
   const cols=[{h:'總分',f:p=>hot(total(p))},{h:'補洞',f:p=>S.mine.length?fit(p,w).toFixed(1):'-'},
     {h:'ADP',f:p=>hasAdp(p)?Math.round(p.adp):'-'},
     {h:'$',f:p=>p.auction?`<span style="color:var(--warn)">$${p.auction}</span>`:'-'},
     {h:'撿便宜',f:p=>{if(!hasAdp(p))return '-';
       const e=p.adp-(pool.indexOf(p)+1);
       return `<span class="${e>8?'edge-p':'edge-n'}">${e>0?'+':''}${Math.round(e)}</span>`}}];
-  const t=playerTable(pool.slice(0,250),cols,(p,td)=>{
-    const a=el('button','act','選');a.onclick=()=>{S.mine.push(p.id);save();render()};
-    const b=el('button','act','✕');b.style.marginLeft='4px';
-    b.onclick=()=>{S.gone.push(p.id);save();render()};
-    td.append(a,b);
+  const tbl=playerTable(pool.slice(0,250),cols,(p,td)=>{
+    const a=el('button','act'+(mineTurn?' pick':''),mineTurn?'我選':'選走');
+    a.title=`歸給 ${teamName(t)}`;
+    a.onclick=()=>{S.picks.push(p.id);save();render()};
+    td.append(a);
   },null,rec);
-  const dl=$('#dl'); dl.innerHTML=''; dl.append(el('h2',null,'球員排名(依總分)'),t);
+  const dl=$('#dl'); dl.innerHTML='';
+  dl.append(el('h2',null,`球員排名(依總分) — 目前輪到 ${mineTurn?'你':teamName(t)}`),tbl);
 }
 
 /* ---------- 總分表(全部球員 + 可調權重) ---------- */
