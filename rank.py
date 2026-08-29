@@ -49,10 +49,15 @@ def nba_teams():
     return out
 
 
-def totals(player, season):
-    """該季實際累積數據 (statSourceId=0, 全季)。"""
+def totals(player, season, src=0):
+    """該季全季累積數據。src=0 實際,src=1 ESPN 賽前投影。
+
+    stat 的 id 格式是 {statSourceId}{statSplitTypeId}{season},
+    所以 "002027" = 2026-27 實際,"102027" = 2026-27 投影。
+    """
+    key = "%d0%d" % (src, season)
     for s in player.get("stats", []):
-        if s.get("id") == "00%d" % season:
+        if s.get("id") == key:
             return s.get("stats") or {}
     return {}
 
@@ -84,21 +89,41 @@ def zscores(rows, ref=None):
 STATS = ("PTS", "REB", "AST", "STL", "BLK", "TO", "FGM", "FGA", "FTM", "FTA", "3PM")
 
 
-def build(season=2026, rank_season=2027, min_gp=20):
-    """主檔 = 新球季名單(含新秀與整季報銷的傷兵),再左連接上一季數據。
+def per_game(t):
+    gp = t.get(S["GP"], 0)
+    if not gp:
+        return None
+    return dict({k: t.get(S[k], 0) / gp for k in STATS},
+                GP=gp, MIN=round(t.get(S["MIN"], 0) / gp, 1))
+
+
+def build(season=2026, rank_season=2027, min_gp=20, source="auto"):
+    """主檔 = 新球季名單(含新秀與整季報銷的傷兵),再左連接數據。
 
     以前拿舊球季當主檔又用 GP>=20 過濾,結果 Sabonis / Trae / Tatum 這種
     去年打不到 20 場的人整批消失在選秀板上,新秀更是完全沒出現。
+
+    數據來源(source):
+      proj   ESPN 對 rank_season 的賽前投影 —— 這是最想要的,因為它已經
+             把傷癒歸隊、換隊、角色變化算進去了。
+      actual 上一季實際數據。
+      auto   有投影就用投影,沒有就退回實際數據(預設)。
     """
-    stats = {}
-    for p in fetch(season):
-        t = totals(p, season)
-        gp = t.get(S["GP"], 0)
-        if gp:
-            stats[p["id"]] = dict({k: t.get(S[k], 0) / gp for k in STATS},
-                                  GP=gp, MIN=round(t.get(S["MIN"], 0) / gp, 1))
+    master = fetch(rank_season)
+    proj = {p["id"]: pg for p in master
+            if (pg := per_game(totals(p, rank_season, src=1)))}
+    use_proj = source == "proj" or (source == "auto" and len(proj) >= 100)
+    if source == "proj" and not proj:
+        raise SystemExit(f"ESPN 尚未發布 {rank_season} 的逐項投影,改用 --source actual")
+    if use_proj:
+        stats, tag = proj, f"ESPN {rank_season} 賽前投影"
+    else:
+        stats = {p["id"]: pg for p in fetch(season)
+                 if (pg := per_game(totals(p, season)))}
+        tag = f"{season-1}-{str(season)[2:]} 實際數據"
+    print(f"數據來源:{tag}({len(stats)} 人有數據)")
     rows = []
-    for p in fetch(rank_season):
+    for p in master:
         d = p.get("draftRanksByRankType") or {}
         adp = (p.get("ownership") or {}).get("averageDraftPosition")
         rk = d.get("STANDARD", {}).get("rank")
@@ -114,6 +139,9 @@ def build(season=2026, rank_season=2027, min_gp=20):
             r[k] = s[k] if s else 0.0
         r["sample"] = "ok" if r["GP"] >= min_gp else ("thin" if r["GP"] else "none")
         rows.append(r)
+    rows and rows[0].setdefault("source", tag)
+    for r in rows:
+        r["source"] = tag
     return rows
 
 
@@ -123,11 +151,13 @@ def main():
     a.add_argument("--top", type=int, default=60)
     a.add_argument("--pos", default=None, help="PG/SG/SF/PF/C")
     a.add_argument("--min-gp", type=int, default=20)
+    a.add_argument("--source", choices=["auto", "proj", "actual"], default="auto",
+                   help="auto = ESPN 有投影就用投影,沒有就用上一季實際數據")
     a.add_argument("--out", default="rankings.csv")
     a.add_argument("--json", default=None, help="順便輸出網頁用的 data.json")
     args = a.parse_args()
 
-    rows = build(min_gp=args.min_gp)
+    rows = build(min_gp=args.min_gp, source=args.source)
     ref = [r for r in rows if r["sample"] == "ok"]      # 基準只用樣本夠的人
     if args.mode == "pts":
         for r in rows:
