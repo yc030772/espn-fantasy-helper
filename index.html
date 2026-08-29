@@ -19,7 +19,7 @@ h1{font-size:16px;margin:0;font-weight:600}
 main{padding:16px 18px;max-width:1400px}
 .row{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
-.grow{flex:1;min-width:420px}
+.grow{flex:1;min-width:420px;overflow:hidden}
 .side{width:330px;flex-shrink:0}
 h2{font-size:13px;margin:0 0 10px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
 input,select{background:#0c1014;border:1px solid var(--line);color:var(--fg);padding:6px 9px;border-radius:6px;font:inherit}
@@ -30,9 +30,11 @@ button.act:hover{border-color:var(--accent)}
 table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
 th{text-align:right;color:var(--dim);font-weight:500;font-size:11px;padding:5px 6px;position:sticky;top:0;background:var(--card);cursor:pointer;white-space:nowrap}
 th:first-child,th.l,td.l{text-align:left}
-td{padding:4px 6px;text-align:right;border-top:1px solid #1d232b;white-space:nowrap}
-td.name{display:flex;align-items:center;gap:7px}
-img.logo{width:22px;height:22px;object-fit:contain;flex-shrink:0;
+td{padding:3px 5px;text-align:right;border-top:1px solid #1d232b;white-space:nowrap;font-size:12px}
+td.name{display:flex;align-items:center;gap:6px;max-width:230px}
+td.name>span:first-of-type{flex:1 1 auto;min-width:74px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+img.logo{width:18px;height:18px;object-fit:contain;flex-shrink:0;
   background:#e9edf2;border-radius:50%;padding:2px}
 tbody tr{border-left:3px solid transparent}
 .abbr{font-size:10px;font-weight:700;letter-spacing:.04em;padding:1px 5px;border-radius:3px;color:#fff;
@@ -43,10 +45,11 @@ tbody tr.rec{background:#14304f}
 tbody tr.rec:hover{background:#1a3c63}
 tbody tr.rec td{border-top-color:#25507f}
 .rechip{font-size:10px;font-weight:700;padding:1px 6px;border-radius:3px;
-  background:var(--accent);color:#06101f;margin-left:6px}
+  background:var(--accent);color:#06101f;margin-left:6px;flex-shrink:0}
 .scroll{max-height:66vh;overflow:auto}
 .pos{color:var(--dim);font-size:11px}
-.pill{font-size:10px;padding:1px 5px;border-radius:4px;background:#2a2016;color:var(--warn);margin-left:4px}
+.pill{font-size:10px;padding:1px 5px;border-radius:4px;background:#2a2016;color:var(--warn);
+  margin-left:4px;flex-shrink:0}
 .pill.nodata{background:#1b2430;color:#8fb6e8}
 .edge-p{color:var(--good)}.edge-n{color:var(--dim)}
 .edge-w{color:var(--warn);font-weight:600}
@@ -85,6 +88,16 @@ button.act.pick{background:var(--accent);color:#06101f;border-color:var(--accent
 .bp span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 table.matrix td{border-top:1px solid #1d232b}
 .rksup{font-size:9px;color:var(--dim);margin-left:2px}
+.sarr{color:var(--accent);margin-left:3px;font-size:9px}
+.rstrip{display:flex;gap:6px;flex-wrap:wrap}
+.rcell{flex:1;min-width:64px;background:#12171d;border:1px solid var(--line);border-radius:6px;
+  padding:5px 7px;display:flex;flex-direction:column;gap:1px;font-size:12px}
+.rcell b{font-weight:500;color:var(--dim);font-size:10px}
+.rcell span:nth-child(2){font-weight:700}
+.rcell .pos{font-size:10px}
+.rcell.rsum{border-color:var(--accent)}
+th.sortable{cursor:pointer}
+th.sortable:hover{color:var(--fg)}
 </style>
 
 <header>
@@ -115,7 +128,9 @@ const $=s=>document.querySelector(s), el=(t,c,h)=>{const e=document.createElemen
 const S=JSON.parse(localStorage.getItem('fbb')||'{}');
 const save=()=>localStorage.setItem('fbb',JSON.stringify(S));
 S.picks=S.picks||[]; S.nTeams=S.nTeams||12; S.slot=S.slot||1;
-S.order=S.order||'total';  // 預設用自己的分數;可切成 ESPN 排名(回測 ρ=.906)
+S.dsort=S.dsort||{k:'mine',dir:1};   // 選秀頁排序:預設我的排序、升冪
+S.fsort=S.fsort||{k:'total',dir:-1};  // FA 頁
+S.asort=S.asort||{k:'total',dir:-1};  // 總分表
 if(S.gp===undefined)S.gp=false;   // 出賽數折算預設關,見 durability()
 S.mine=[]; S.gone=[];   // 由 picks 推導,見 syncDraft()
 S.w=S.w||{...PRESETS['均衡(建議)']}; S.preset=S.preset||'均衡(建議)';
@@ -159,16 +174,16 @@ const hasAdp=p=>p.adp&&p.adp<140;   // 140 = ESPN 未排名的預設值
 /* 排序依據。回測 312 人:ESPN 排名對「下一季實際 9-cat 表現」的 Spearman
    ρ=.906,去年實際數據只有 .769,混合反而更差 -> 預設用 ESPN 排名。
    但去年數據仍然不可少:類別強弱、建議、交易分析全部靠它。 */
-function orderer(pool){
+/* 回傳兩份名次表:be = 依 ESPN 排名的位次,bt = 依我們自己總分的位次。
+   兩者都是穩定的位次,跟畫面當下用哪個排序無關。 */
+function ranks(pool){
   const bt={}, be={};
-  [...pool].sort((a,b)=>totalOr(b)-totalOr(a)).forEach((p,i)=>bt[p.id]=i);
+  [...pool].sort((a,b)=>totalOr(b)-totalOr(a)).forEach((p,i)=>bt[p.id]=i+1);
   const er=p=>p.espn_rank||(hasAdp(p)?p.adp:9999);   // 新秀沒排名只有 ADP,尺度相同可遞補
-  [...pool].sort((a,b)=>er(a)-er(b)).forEach((p,i)=>be[p.id]=i);
-  return p=>S.order==='total'?bt[p.id]
-          :S.order==='espn'?be[p.id]
-          :0.7*be[p.id]+0.3*bt[p.id];
+  [...pool].sort((a,b)=>er(a)-er(b)).forEach((p,i)=>be[p.id]=i+1);
+  return {bt,be};
 }
-const ORDER={espn:'ESPN 排名(回測最準)',total:'總分(去年數據)',mix:'混合 70/30'};
+
 // 分數熱度:綠(強)→ 灰(中)→ 紅(弱)
 const heat=v=>{const t=Math.max(-1,Math.min(1,v/8));
   return t>0?`hsl(${152-t*8} 65% ${52+t*14}%)`:`hsl(${6} ${45+(-t)*30}% ${58+t*10}%)`};
@@ -223,26 +238,59 @@ function catBars(t,scale){
 }
 
 /* ---------- 表格 ---------- */
-function playerTable(list,cols,rowAct,onSort,rec){
+/* 固定欄位也納入排序,跟資料欄位用同一套機制 */
+function fixedCols(rec){return [
+  {h:'球員',k:'name',l:1,v:p=>p.name,
+   f:p=>`${logo(p)}<span>${p.name}</span>`
+     +`${rec&&rec.has(p.id)?'<span class="rechip">建議</span>':''}`
+     +`${noData(p)?'<span class="pill nodata">新秀/無數據</span>'
+        :thin(p)?`<span class="pill">去年僅 ${p.GP} 場</span>`:''}`
+     +`${p.injury&&p.injury!=='ACTIVE'?`<span class="pill">${p.injury}</span>`:''}`},
+  {h:'隊',k:'team',l:1,v:p=>tm(p).abbr,f:p=>abbrChip(p)},
+  {h:'POS',k:'pos',l:1,v:p=>p.pos,f:p=>posBadge(p)},
+  {h:'GP',k:'GP',desc:1,v:p=>p.GP,f:p=>p.GP},
+  {h:'MIN',k:'MIN',desc:1,v:p=>p.MIN,f:p=>p.MIN},
+]}
+
+/* 依 sort={k,dir} 排序。沒有值的球員(新秀)永遠排最後,不論升降冪。 */
+function sortList(list,cols,sort){
+  const c=[...fixedCols(),...cols].find(x=>x.k===sort.k);
+  if(!c||!c.v)return list;
+  const big=Number.MAX_SAFE_INTEGER;
+  return [...list].sort((a,b)=>{
+    let av=c.v(a),bv=c.v(b);
+    if(typeof av==='string')return av.localeCompare(bv)*sort.dir;
+    const an=av==null||Number.isNaN(av), bn=bv==null||Number.isNaN(bv);
+    if(an||bn)return an&&bn?0:(an?1:-1);          // 無值一律墊底
+    return (av-bv)*sort.dir;
+  });
+}
+/* 點欄位標題:同一欄再點一次換方向,換欄位則用該欄的預設方向 */
+function toggleSort(sort,c){
+  if(sort.k===c.k)sort.dir=-sort.dir;
+  else{sort.k=c.k;sort.dir=c.desc?-1:1;}
+  return sort;
+}
+
+function playerTable(list,cols,rowAct,onSort,rec,sort){
+  const all=fixedCols(rec).concat(cols);
   const wrap=el('div','scroll'), tb=el('table');
-  tb.innerHTML='<thead><tr><th class="l">#</th><th class="l">球員</th><th class="l">隊</th><th class="l">POS</th><th>GP</th><th>MIN</th>'
-    +cols.map(c=>`<th>${c.h}</th>`).join('')+'<th></th></tr></thead>';
-  if(onSort)tb.querySelectorAll('th').forEach((th,i)=>{if(i>=6&&i-6<cols.length)th.onclick=()=>onSort(cols[i-6])});
+  const arrow=c=>sort&&sort.k===c.k?`<span class="sarr">${sort.dir<0?'▼':'▲'}</span>`:'';
+  tb.innerHTML='<thead><tr><th class="l">#</th>'
+    +all.map(c=>`<th class="${c.l?'l ':''}${c.k&&onSort?'sortable':''}">${c.h}${arrow(c)}</th>`).join('')
+    +'<th></th></tr></thead>';
+  if(onSort)tb.querySelectorAll('th').forEach((th,i)=>{
+    const c=all[i-1];
+    if(i>=1&&c&&c.k)th.onclick=()=>onSort(c);
+  });
   const body=el('tbody');
   list.forEach((p,i)=>{
     const tr=el('tr');
     if(rec&&rec.has(p.id))tr.classList.add('rec');
     if(S.mine.includes(p.id))tr.classList.add('mine');
-    if(S.gone.includes(p.id))tr.classList.add('gone');
     tr.style.borderLeftColor=tm(p).color;
     tr.innerHTML=`<td class="l">${i+1}</td>`
-      +`<td class="l name">${logo(p)}<span>${p.name}</span>`
-      +`${rec&&rec.has(p.id)?'<span class="rechip">建議</span>':''}`
-      +`${noData(p)?'<span class="pill nodata">新秀/無數據</span>'
-         :thin(p)?`<span class="pill">去年僅 ${p.GP} 場</span>`:''}`
-      +`${p.injury&&p.injury!=='ACTIVE'?`<span class="pill">${p.injury}</span>`:''}</td>`
-      +`<td class="l">${abbrChip(p)}</td><td class="l">${posBadge(p)}</td>`
-      +`<td>${p.GP}</td><td>${p.MIN}</td>`+cols.map(c=>`<td>${c.f(p)}</td>`).join('');
+      +all.map(c=>`<td class="${c.l?'l ':''}${c.k==='name'?'name':''}">${c.f(p)}</td>`).join('');
     const td=el('td'); if(rowAct)rowAct(p,td); tr.append(td); body.append(tr);
   });
   tb.append(body); wrap.append(tb); return wrap;
@@ -295,18 +343,12 @@ function draftView(app){
   const sel=el('select'); sel.id='pf';
   ['全部','PG','SG','SF','PF','C'].forEach(o=>sel.append(new Option(o,o)));
   sel.onchange=redrawDraft; bar.append(' ',sel,' ');
-  bar.append(el('span','pos','排序 '));
-  const os=el('select');
-  Object.entries(ORDER).forEach(([k,v])=>os.append(new Option(v,k)));
-  os.value=S.order; os.onchange=()=>{S.order=os.value;save();render()};
-  bar.append(os);
-  bar.append(el('span','hint',' · 回測 312 人:ESPN 排名 ρ=.906、去年數據 ρ=.769'));
-  bar.append(el('span','hint',' · 小樣本已做可靠度收縮'));
+  bar.append(el('span','hint','點任一欄位標題排序,再點一次換升/降冪 · 回測 312 人:ESPN ρ=.906、我們 ρ=.769 · 小樣本已做可靠度收縮'));
   app.append(bar);
 
-  const row=el('div','row'), left=el('div','card grow'), right=el('div','side card');
-  left.id='dl'; app.append(row); row.append(left,right);
-  right.id='stand';
+  const strip=el('div','card'); strip.id='stand'; strip.style.marginBottom='12px';
+  app.append(strip);
+  const left=el('div','card'); left.id='dl'; app.append(left);
   drawStandings();
   redrawDraft();
   app.append(standingsTable());
@@ -316,47 +358,34 @@ function draftView(app){
 /* --- 9 類別相對排名:我 vs 其他 11 隊 --- */
 function drawStandings(){
   const box=$('#stand'); if(!box)return; box.innerHTML='';
-  box.append(el('h2',null,`類別相對排名 (${S.nTeams} 隊)`));
   if(!S.picks.length){
-    box.append(el('p','hint','開始選人之後,這裡會即時顯示你在每個類別排第幾、跟第一名差多少。'));
+    box.append(el('p','hint','開始選人之後,這裡會顯示你在每個類別排第幾(共 '+S.nTeams+' 隊),以及最弱的三項。'));
     return;
   }
   const all=[...Array(S.nTeams).keys()].map(t=>({t,cat:teamCats(rosterOf(t))}));
-  const me=all[S.slot-1];
-  let wins=0;
+  const me=all[S.slot-1], half=Math.ceil(S.nTeams/2);
+  const strip=el('div','rstrip');
+  let wins=0; const ranked=[];
   CATS.forEach(c=>{
     const sorted=[...all].sort((a,b)=>b.cat[c]-a.cat[c]);
-    const rank=sorted.findIndex(x=>x.t===me.t)+1;
-    const best=sorted[0].cat[c], v=me.cat[c];
-    const gapTop=v-best, ahead=rank>1?sorted[rank-2].cat[c]-v:0;
-    if(rank<=Math.ceil(S.nTeams/2))wins++;
-    const r=el('div','strow');
-    r.innerHTML=`<b>${LBL[c]}</b>`;
-    const bar=el('div','bar');
-    const spread=Math.max(...all.map(x=>x.cat[c]))-Math.min(...all.map(x=>x.cat[c]))||1;
-    const lo=Math.min(...all.map(x=>x.cat[c]));
-    const fill=el('i'); fill.style.cssText=`left:0;width:${(v-lo)/spread*100}%;background:${
-      rank<=3?'var(--good)':rank<=S.nTeams/2?'var(--warn)':'var(--bad)'}`;
-    bar.append(fill);
-    all.forEach(x=>{if(x.t===me.t)return;const d=el('span','tick');
-      d.style.left=((x.cat[c]-lo)/spread*100)+'%';bar.append(d)});
-    r.append(bar);
-    const rk=el('span','rk');
-    rk.style.color=rank<=3?'var(--good)':rank<=S.nTeams/2?'var(--warn)':'var(--bad)';
-    rk.textContent=`#${rank}`;
-    r.append(rk);
-    r.append(el('span','gap',rank===1?'領先 '+(v-sorted[1].cat[c]).toFixed(1):gapTop.toFixed(1)));
-    r.title=`我 ${v.toFixed(1)} · 第一名 ${best.toFixed(1)}`+(rank>1?` · 追上前一名還差 ${ahead.toFixed(1)}`:'');
-    box.append(r);
+    const r=sorted.findIndex(x=>x.t===me.t)+1;
+    ranked.push([c,r]);
+    if(r<=half)wins++;
+    const col=r<=3?'var(--good)':r<=half?'var(--warn)':'var(--bad)';
+    const cell=el('div','rcell');
+    cell.innerHTML=`<b>${LBL[c]}</b><span style="color:${col}">#${r}</span>`
+      +`<span class="pos">${me.cat[c].toFixed(1)}</span>`;
+    cell.title=`第一名 ${sorted[0].cat[c].toFixed(1)} · 我 ${me.cat[c].toFixed(1)}`;
+    strip.append(cell);
   });
-  box.append(el('p','hint',`目前站在前段的類別:<b style="color:${wins>=5?'var(--good)':'var(--bad)'}">${wins}/9</b>
-    (H2H 需要贏 5 類)。灰點是其他隊的位置,長條是你。`));
-  const weak=CATS.map(c=>{
-    const sorted=[...all].sort((a,b)=>b.cat[c]-a.cat[c]);
-    return [c,sorted.findIndex(x=>x.t===me.t)+1];
-  }).sort((a,b)=>b[1]-a[1]).slice(0,3).map(x=>LBL[x[0]]);
-  box.append(el('p','hint','排最後面的三項:<b style="color:var(--bad)">'+weak.join(' · ')
-    +'</b><br>能補這幾項的人會<b style="color:var(--accent)">反白標「建議」</b>,但排序一律照總分。'));
+  const sum=el('div','rcell rsum');
+  sum.innerHTML=`<b>前段</b><span style="color:${wins>=5?'var(--good)':'var(--bad)'}">${wins}/9</span>`
+    +`<span class="pos">要 5</span>`;
+  strip.append(sum);
+  box.append(strip);
+  const weak=ranked.sort((a,b)=>b[1]-a[1]).slice(0,3).map(x=>LBL[x[0]]);
+  box.append(el('p','hint','最弱三項:<b style="color:var(--bad)">'+weak.join(' · ')
+    +'</b> —— 能補這幾項的人會<b style="color:var(--accent)">反白標「建議」</b>,但排序照你點的欄位。'));
 }
 
 /* --- 各隊 × 各類別 對照表 --- */
@@ -430,31 +459,46 @@ function redrawDraft(){
   const q=($('#q')?.value||'').toLowerCase(), pf=$('#pf')?.value||'全部';
   const w=weights(S.mine);
   let pool=P.filter(p=>!S.picks.includes(p.id))
-    .filter(p=>p.name.toLowerCase().includes(q)&&(pf==='全部'||p.pos===pf))
-    .sort((a,b)=>totalOr(b)-totalOr(a));
-  const ord=orderer(pool); pool.sort((a,b)=>ord(a)-ord(b));
-  const rec=recSet(pool.slice(0,120),S.mine);        // 建議只從前 120 名裡挑
+    .filter(p=>p.name.toLowerCase().includes(q)&&(pf==='全部'||p.pos===pf));
+  const {bt,be}=ranks(pool);
+  const rec=recSet([...pool].sort((a,b)=>bt[a.id]-bt[b.id]).slice(0,120),S.mine);
   const t=onClock(), mineTurn=t===S.slot-1;
-  const cols=[{h:'總分',f:p=>hot(total(p))},{h:'ESPN',f:p=>p.espn_rank||'-'},
-    {h:'補洞',f:p=>S.mine.length?fit(p,w).toFixed(1):'-'},
-    {h:'ADP',f:p=>hasAdp(p)?Math.round(p.adp):'-'},
-    {h:'$',f:p=>p.auction?`<span style="color:var(--warn)">$${p.auction}</span>`:'-'},
-    {h:'落差',f:p=>{
-      const er=p.espn_rank||(hasAdp(p)?Math.round(p.adp):null);
-      if(!er)return '-';
-      const e=er-(pool.indexOf(p)+1);
-      // + = ESPN 排得比我們低,我們更看好(可能撿便宜)
-      // − = ESPN 排得比我們高,通常是去年受傷、數據失真的球星
+  const cz=(p,c)=>noData(p)?null:S.w[c]*catZ(p,c);
+  const cols=[
+    // 欄位 1、2:兩套排序
+    {h:'ESPN 排序',k:'espn',v:p=>be[p.id],
+     f:p=>`<b>${be[p.id]}</b>${p.espn_rank?'':'<span class="pos" title="ESPN 未給排名,以 ADP 遞補">~</span>'}`},
+    {h:'我的排序',k:'mine',v:p=>total(p)===null?null:bt[p.id],
+     f:p=>total(p)===null?'<span class="pos" title="無去年數據,無法評分">–</span>':`<b>${bt[p.id]}</b>`},
+    // + = ESPN 排得比我們低,我們更看好(可能撿便宜)
+    // − = ESPN 排得比我們高,通常是去年受傷、場均失真的球星
+    {h:'落差',k:'gap',desc:1,v:p=>total(p)===null?null:be[p.id]-bt[p.id],f:p=>{
+      if(total(p)===null)return '-';
+      const e=be[p.id]-bt[p.id];
       const cls=e>=25?'edge-p':e<=-25?'edge-w':'edge-n';
-      return `<span class="${cls}" title="${e>=25?'ESPN 沒那麼看好,可能撿便宜':e<=-25?'ESPN 明顯更看好 —— 多半是去年受傷、場均失真':''}">${e>0?'+':''}${e}</span>`}}];
+      return `<span class="${cls}" title="${e>=25?'ESPN 沒那麼看好,可能撿便宜':e<=-25?'ESPN 明顯更看好 —— 多半是去年受傷、場均失真':''}">${e>0?'+':''}${e}</span>`}},
+    {h:'總分',k:'total',desc:1,v:p=>total(p),f:p=>hot(total(p))},
+    {h:'補洞',k:'fit',desc:1,v:p=>S.mine.length&&!noData(p)?fit(p,w):null,
+     f:p=>S.mine.length&&!noData(p)?fit(p,w).toFixed(1):'-'},
+  ].concat(CATS.map(c=>({h:LBL[c],k:c,desc:1,v:p=>cz(p,c),
+     f:p=>{const v=cz(p,c);return v===null?'<span class="pos">–</span>'
+       :`<span style="color:${heat(v*2.2)}">${v.toFixed(1)}</span>`}})))
+   .concat([
+    {h:'ADP',k:'adp',v:p=>hasAdp(p)?p.adp:null,f:p=>hasAdp(p)?Math.round(p.adp):'-'},
+    {h:'$',k:'auction',desc:1,v:p=>p.auction||null,
+     f:p=>p.auction?`<span style="color:var(--warn)">$${p.auction}</span>`:'-'},
+  ]);
+  pool=sortList(pool,cols,S.dsort);
   const tbl=playerTable(pool.slice(0,250),cols,(p,td)=>{
     const a=el('button','act'+(mineTurn?' pick':''),mineTurn?'我選':'選走');
     a.title=`歸給 ${teamName(t)}`;
     a.onclick=()=>{S.picks.push(p.id);save();render()};
     td.append(a);
-  },null,rec);
+  },c=>{toggleSort(S.dsort,c);save();redrawDraft()},rec,S.dsort);
+  const cn=[...fixedCols(),...cols].find(c=>c.k===S.dsort.k);
   const dl=$('#dl'); dl.innerHTML='';
-  dl.append(el('h2',null,`球員排名(依${ORDER[S.order]}) — 目前輪到 ${mineTurn?'你':teamName(t)}`),tbl);
+  dl.append(el('h2',null,`球員排名(依${cn?cn.h:'?'} ${S.dsort.dir<0?'降冪':'升冪'})`
+    +` — 目前輪到 ${mineTurn?'你':teamName(t)}`),tbl);
 }
 
 /* ---------- 總分表(全部球員 + 可調權重) ---------- */
@@ -477,7 +521,7 @@ function allView(app){
   wbox.append(el('p','hint','權重建議 = 1/σ(整隊該類別總分):類別內差距越大,多一單位 z 越難翻盤,權重越低。TO 因與 PTS/AST 相關 −0.85,額外壓到 0.6。設 0 = 直接棄掉該類別。<br>改權重會同時影響「選秀 / 交易 / FA」三頁。'));
   app.append(wbox);
 
-  S.sort=S.sort||'total'; S.q2=S.q2||'';
+  S.q2=S.q2||'';
   const bar=el('div','card'); bar.style.marginBottom='12px';
   const q=Object.assign(document.createElement('input'),{type:'text',placeholder:'球員名',value:S.q2});
   q.oninput=()=>{S.q2=q.value;drawAll()};
@@ -490,32 +534,35 @@ function allView(app){
   const box=el('div','card'); box.id='allbox'; app.append(box);
   drawAll();
 }
-const allCols=()=>[{h:'總分',k:'total',f:p=>hot(total(p),2)}]
-  .concat(CATS.map(c=>({h:LBL[c],k:c,f:p=>{const v=S.w[c]*catZ(p,c);
-    return `<span class="${v>0.6?'mine':v<-0.6?'edge-n':''}" style="${v<-0.6?'color:var(--bad)':''}">${v.toFixed(2)}</span>`}})))
-  .concat([{h:'ADP',k:'adp',f:p=>hasAdp(p)?Math.round(p.adp):'-'},
-            {h:'$',k:'auction',f:p=>p.auction?`<span style="color:var(--warn)">$${p.auction}</span>`:'-'},
-            {h:'ESPN',k:'espn_rank',f:p=>p.espn_rank||'-'}]);
+const allCols=()=>[{h:'總分',k:'total',desc:1,v:p=>total(p),f:p=>hot(total(p),2)}]
+  .concat(CATS.map(c=>({h:LBL[c],k:c,desc:1,v:p=>noData(p)?null:S.w[c]*catZ(p,c),
+    f:p=>{if(noData(p))return '<span class="pos">–</span>';
+      const v=S.w[c]*catZ(p,c);
+      return `<span style="color:${heat(v*2.2)}">${v.toFixed(2)}</span>`}})))
+  .concat([{h:'ADP',k:'adp',v:p=>hasAdp(p)?p.adp:null,f:p=>hasAdp(p)?Math.round(p.adp):'-'},
+            {h:'$',k:'auction',desc:1,v:p=>p.auction||null,
+             f:p=>p.auction?`<span style="color:var(--warn)">$${p.auction}</span>`:'-'},
+            {h:'ESPN',k:'espn_rank',v:p=>p.espn_rank||null,f:p=>p.espn_rank||'-'}]);
 function allList(){
   const q=(S.q2||'').toLowerCase(), pf=$('#pf2')?.value||'全部';
-  const key=p=>S.sort==='total'?totalOr(p)
-    :S.sort==='adp'?-(hasAdp(p)?p.adp:999)
-    :S.sort==='espn_rank'?-(p.espn_rank||999)
-    :S.sort==='auction'?(p.auction||0)
-    :S.w[S.sort]*catZ(p,S.sort);
-  return P.filter(p=>p.name.toLowerCase().includes(q)&&(pf==='全部'||p.pos===pf)).sort((a,b)=>key(b)-key(a));
+  return sortList(P.filter(p=>p.name.toLowerCase().includes(q)&&(pf==='全部'||p.pos===pf)),
+                  allCols(), S.asort);
 }
 function drawAll(){
   const list=allList(), box=$('#allbox'); box.innerHTML='';
-  const sn={total:'總分',adp:'ADP',auction:'拍賣價',espn_rank:'ESPN 排名'}[S.sort]||LBL[S.sort];
-  box.append(el('h2',null,`全部球員加權總分 (${list.length} 人,依 ${sn} 排序)`));
-  box.append(playerTable(list,allCols(),null,c=>{S.sort=c.k;save();drawAll()}));
+  const cn=[...fixedCols(),...allCols()].find(c=>c.k===S.asort.k);
+  box.append(el('h2',null,`全部球員加權總分 (${list.length} 人,依 ${cn?cn.h:'?'} `
+    +`${S.asort.dir<0?'降冪':'升冪'})`));
+  box.append(playerTable(list,allCols(),null,
+    c=>{toggleSort(S.asort,c);save();drawAll()},null,S.asort));
 }
 function downloadCsv(){
   const rows=allList();
   const head=['排名','球員','隊','POS','GP','MIN','總分',...CATS.map(c=>LBL[c]),'ADP','拍賣價','ESPN排名'];
-  const body=rows.map((p,i)=>[i+1,p.name,tm(p).abbr,p.pos,p.GP,p.MIN,total(p).toFixed(3),
-    ...CATS.map(c=>(S.w[c]*catZ(p,c)).toFixed(3)),hasAdp(p)?Math.round(p.adp):'',p.auction||'',p.espn_rank||'']);
+  const body=rows.map((p,i)=>[i+1,p.name,tm(p).abbr,p.pos,p.GP,p.MIN,
+    total(p)===null?'':total(p).toFixed(3),
+    ...CATS.map(c=>noData(p)?'':(S.w[c]*catZ(p,c)).toFixed(3)),
+    hasAdp(p)?Math.round(p.adp):'',p.auction||'',p.espn_rank||'']);
   const csv='\ufeff'+[head,...body].map(r=>r.map(x=>`"${x}"`).join(',')).join('\n');
   const a=el('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
   a.download='fantasy_總分.csv'; a.click();
@@ -596,8 +643,8 @@ function faView(app){
   const owned=new Set(S.teams.flatMap(t=>t.roster));
   const my=S.teams.find(t=>t.id===S.myTeam).roster;
   const w=weights(my);
-  const fa=P.filter(p=>!owned.has(p.id)).sort((a,b)=>totalOr(b)-totalOr(a));
-  const rec=recSet(fa.slice(0,80),my);
+  let fa=P.filter(p=>!owned.has(p.id));
+  const rec=recSet([...fa].sort((a,b)=>totalOr(b)-totalOr(a)).slice(0,80),my);
   const row=el('div','row'), left=el('div','card grow'), right=el('div','side card');
   right.append(el('h2',null,'我的隊伍體質'));
   right.append(catBars(teamCats(my),Math.max(3,my.length*1.2)));
@@ -608,10 +655,13 @@ function faView(app){
   right.append(el('h2',null,'考慮 drop'));
   worst.forEach(i=>right.append(el('p','hint',`${byId[i].name} <span class="pos">${byId[i].pos}</span> · 契合度 ${fit(byId[i],w).toFixed(1)}`)));
   left.append(el('h2',null,`可撿的自由球員 (${fa.length} 人)`));
-  left.append(playerTable(fa.slice(0,120),
-    [{h:'總分',f:p=>hot(total(p))},{h:'補洞',f:p=>fit(p,w).toFixed(1)},
-     {h:'補到',f:p=>CATS.map(c=>[c,catZ(p,c)]).sort((a,b)=>b[1]-a[1]).slice(0,2).map(x=>LBL[x[0]]).join(' ')}],
-    null,null,rec));
+  const fcols=[{h:'總分',k:'total',desc:1,v:p=>total(p),f:p=>hot(total(p))},
+    {h:'補洞',k:'fit',desc:1,v:p=>noData(p)?null:fit(p,w),f:p=>noData(p)?'-':fit(p,w).toFixed(1)},
+    {h:'ESPN',k:'espn',v:p=>p.espn_rank||null,f:p=>p.espn_rank||'-'},
+    {h:'補到',f:p=>noData(p)?'-':CATS.map(c=>[c,catZ(p,c)]).sort((a,b)=>b[1]-a[1]).slice(0,2).map(x=>LBL[x[0]]).join(' ')}];
+  fa=sortList(fa,fcols,S.fsort);
+  left.append(playerTable(fa.slice(0,120),fcols,null,
+    c=>{toggleSort(S.fsort,c);save();render()},rec,S.fsort));
   row.append(left,right); app.append(row);
 }
 
