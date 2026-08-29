@@ -9,6 +9,7 @@
 import argparse, csv, json, statistics as st, time, urllib.request
 
 URL = "https://lm-api-reads.fantasy.espn.com/apis/v3/games/fba/seasons/{s}/players?scoringPeriodId=0&view=kona_player_info"
+TEAMS_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams"
 POS = {1: "PG", 2: "SG", 3: "SF", 4: "PF", 5: "C"}
 # ESPN stat id -> 名稱(累積量,非場均)
 S = {"PTS": "0", "BLK": "1", "STL": "2", "AST": "3", "REB": "6", "TO": "11",
@@ -33,6 +34,19 @@ def fetch(season, limit=500, tries=4):
                 raise
             print("retry %d (%s)" % (i + 1, type(e).__name__))
             time.sleep(3 * (i + 1))
+
+
+def nba_teams():
+    """ESPN 官方隊伍配色與隊徽。site API 的 team id 與 fantasy 的 proTeamId 相同。"""
+    req = urllib.request.Request(TEAMS_URL, headers={"User-Agent": "Mozilla/5.0"})
+    d = json.load(urllib.request.urlopen(req, timeout=30))
+    out = {}
+    for g in d["sports"][0]["leagues"][0]["teams"]:
+        t = g["team"]
+        out[int(t["id"])] = {"abbr": t["abbreviation"], "name": t["shortDisplayName"],
+                             "color": "#" + t["color"], "alt": "#" + (t.get("alternateColor") or t["color"]),
+                             "logo": t["logos"][0]["href"]}
+    return out
 
 
 def totals(player, season):
@@ -63,8 +77,12 @@ def zscores(rows):
 
 
 def build(season=2026, rank_season=2027, min_gp=20):
-    ranks = {p["id"]: (p.get("draftRanksByRankType", {}).get("STANDARD", {}).get("rank"),
-                       p.get("ownership", {}).get("averageDraftPosition"))
+    ranks = {p["id"]: {"espn_rank": p.get("draftRanksByRankType", {}).get("STANDARD", {}).get("rank"),
+                       "roto_rank": p.get("draftRanksByRankType", {}).get("ROTO", {}).get("rank"),
+                       "auction": p.get("draftRanksByRankType", {}).get("STANDARD", {}).get("auctionValue") or 0,
+                       "adp": (p.get("ownership") or {}).get("averageDraftPosition"),
+                       "team": p.get("proTeamId"),          # 換隊後的新東家
+                       "injury": p.get("injuryStatus", "")}
              for p in fetch(rank_season)}
     rows = []
     for p in fetch(season):
@@ -74,10 +92,10 @@ def build(season=2026, rank_season=2027, min_gp=20):
             continue
         r = {"name": p["fullName"], "id": p["id"], "pos": POS.get(p.get("defaultPositionId"), "?"),
              "GP": gp, "MIN": round(t.get(S["MIN"], 0) / gp, 1),
-             "injury": p.get("injuryStatus", "")}
+             "injury": p.get("injuryStatus", ""), "team": p.get("proTeamId")}
         for k in ("PTS", "REB", "AST", "STL", "BLK", "TO", "FGM", "FGA", "FTM", "FTA", "3PM"):
             r[k] = t.get(S[k], 0) / gp          # 場均
-        r["espn_rank"], r["adp"] = ranks.get(p["id"], (None, None))
+        r.update(ranks.get(p["id"], {}) or {})
         rows.append(r)
     return rows
 
@@ -119,8 +137,9 @@ def main():
         w.writerows(rows)
     print(f"完整 {len(rows)} 人已存到 {args.out}")
     if args.json:
-        json.dump(rows, open(args.json, "w"), separators=(",", ":"))
-        print(f"網頁資料已存到 {args.json}")
+        json.dump({"players": rows, "teams": nba_teams()},
+                  open(args.json, "w"), separators=(",", ":"))
+        print(f"網頁資料已存到 {args.json}({len(rows)} 人 + 30 隊配色/隊徽)")
 
 
 def demo():
