@@ -113,6 +113,7 @@ const $=s=>document.querySelector(s), el=(t,c,h)=>{const e=document.createElemen
 const S=JSON.parse(localStorage.getItem('fbb')||'{}');
 const save=()=>localStorage.setItem('fbb',JSON.stringify(S));
 S.picks=S.picks||[]; S.nTeams=S.nTeams||12; S.slot=S.slot||1;
+S.order=S.order||'espn';   // 回測:ESPN 排名 ρ=.906 > 去年數據 ρ=.769
 S.mine=[]; S.gone=[];   // 由 picks 推導,見 syncDraft()
 S.w=S.w||{...PRESETS['均衡(建議)']}; S.preset=S.preset||'均衡(建議)';
 let P=[], byId={}, T={}, tab='draft';
@@ -140,6 +141,18 @@ const durability=p=>S.gp===false?1:Math.min(1,(p.GP+8)/70);
 const catZ=(p,c)=>p['z'+c]*durability(p);
 const total=p=>CATS.reduce((s,c)=>s+S.w[c]*catZ(p,c),0);   // 加權總分
 const hasAdp=p=>p.adp&&p.adp<140;   // 140 = ESPN 未排名的預設值
+/* 排序依據。回測 312 人:ESPN 排名對「下一季實際 9-cat 表現」的 Spearman
+   ρ=.906,去年實際數據只有 .769,混合反而更差 -> 預設用 ESPN 排名。
+   但去年數據仍然不可少:類別強弱、建議、交易分析全部靠它。 */
+function orderer(pool){
+  const bt={}, be={};
+  [...pool].sort((a,b)=>total(b)-total(a)).forEach((p,i)=>bt[p.id]=i);
+  [...pool].sort((a,b)=>(a.espn_rank||9999)-(b.espn_rank||9999)).forEach((p,i)=>be[p.id]=i);
+  return p=>S.order==='total'?bt[p.id]
+          :S.order==='espn'?be[p.id]
+          :0.7*be[p.id]+0.3*bt[p.id];
+}
+const ORDER={espn:'ESPN 排名(回測最準)',total:'總分(去年數據)',mix:'混合 70/30'};
 // 分數熱度:綠(強)→ 灰(中)→ 紅(弱)
 const heat=v=>{const t=Math.max(-1,Math.min(1,v/8));
   return t>0?`hsl(${152-t*8} 65% ${52+t*14}%)`:`hsl(${6} ${45+(-t)*30}% ${58+t*10}%)`};
@@ -262,7 +275,13 @@ function draftView(app){
     {type:'text',id:'q',placeholder:'球員名',oninput:redrawDraft}));
   const sel=el('select'); sel.id='pf';
   ['全部','PG','SG','SF','PF','C'].forEach(o=>sel.append(new Option(o,o)));
-  sel.onchange=redrawDraft; bar.append(' ',sel);
+  sel.onchange=redrawDraft; bar.append(' ',sel,' ');
+  bar.append(el('span','pos','排序 '));
+  const os=el('select');
+  Object.entries(ORDER).forEach(([k,v])=>os.append(new Option(v,k)));
+  os.value=S.order; os.onchange=()=>{S.order=os.value;save();render()};
+  bar.append(os);
+  bar.append(el('span','hint',' · 回測 312 人:ESPN 排名 ρ=.906、去年數據 ρ=.769'));
   app.append(bar);
 
   const row=el('div','row'), left=el('div','card grow'), right=el('div','side card');
@@ -387,10 +406,12 @@ function redrawDraft(){
   const w=weights(S.mine);
   let pool=P.filter(p=>!S.picks.includes(p.id))
     .filter(p=>p.name.toLowerCase().includes(q)&&(pf==='全部'||p.pos===pf))
-    .sort((a,b)=>total(b)-total(a));                 // 排序永遠是總分
+    .sort((a,b)=>total(b)-total(a));
+  const ord=orderer(pool); pool.sort((a,b)=>ord(a)-ord(b));
   const rec=recSet(pool.slice(0,120),S.mine);        // 建議只從前 120 名裡挑
   const t=onClock(), mineTurn=t===S.slot-1;
-  const cols=[{h:'總分',f:p=>hot(total(p))},{h:'補洞',f:p=>S.mine.length?fit(p,w).toFixed(1):'-'},
+  const cols=[{h:'總分',f:p=>hot(total(p))},{h:'ESPN',f:p=>p.espn_rank||'-'},
+    {h:'補洞',f:p=>S.mine.length?fit(p,w).toFixed(1):'-'},
     {h:'ADP',f:p=>hasAdp(p)?Math.round(p.adp):'-'},
     {h:'$',f:p=>p.auction?`<span style="color:var(--warn)">$${p.auction}</span>`:'-'},
     {h:'撿便宜',f:p=>{if(!hasAdp(p))return '-';
@@ -403,7 +424,7 @@ function redrawDraft(){
     td.append(a);
   },null,rec);
   const dl=$('#dl'); dl.innerHTML='';
-  dl.append(el('h2',null,`球員排名(依總分) — 目前輪到 ${mineTurn?'你':teamName(t)}`),tbl);
+  dl.append(el('h2',null,`球員排名(依${ORDER[S.order]}) — 目前輪到 ${mineTurn?'你':teamName(t)}`),tbl);
 }
 
 /* ---------- 總分表(全部球員 + 可調權重) ---------- */
