@@ -57,16 +57,21 @@ def totals(player, season):
     return {}
 
 
-def zscores(rows):
-    """9-cat z-score。FG%/FT% 用出手量加權(投得少的高命中率不該灌水)。"""
+def zscores(rows, ref=None):
+    """9-cat z-score。FG%/FT% 用出手量加權(投得少的高命中率不該灌水)。
+
+    ref = 用來算聯盟平均與標準差的樣本。預設全體;傳入「出賽數夠的球員」可
+    避免只打 2 場的人扭曲基準,同時仍然給每個人算出分數。
+    """
     cats = ["PTS", "REB", "AST", "STL", "BLK", "3PM"]
-    lg_fg = sum(r["FGM"] for r in rows) / max(sum(r["FGA"] for r in rows), 1)
-    lg_ft = sum(r["FTM"] for r in rows) / max(sum(r["FTA"] for r in rows), 1)
+    ref = ref or rows
+    lg_fg = sum(r["FGM"] for r in ref) / max(sum(r["FGA"] for r in ref), 1)
+    lg_ft = sum(r["FTM"] for r in ref) / max(sum(r["FTA"] for r in ref), 1)
     for r in rows:
         r["FG_imp"] = r["FGA"] * (r["FGM"] / r["FGA"] - lg_fg) if r["FGA"] else 0.0
         r["FT_imp"] = r["FTA"] * (r["FTM"] / r["FTA"] - lg_ft) if r["FTA"] else 0.0
     for c in cats + ["TO", "FG_imp", "FT_imp"]:
-        vals = [r[c] for r in rows]
+        vals = [r[c] for r in ref]
         m, sd = st.mean(vals), st.pstdev(vals) or 1.0
         sign = -1 if c == "TO" else 1
         for r in rows:
@@ -76,26 +81,38 @@ def zscores(rows):
     return rows
 
 
+STATS = ("PTS", "REB", "AST", "STL", "BLK", "TO", "FGM", "FGA", "FTM", "FTA", "3PM")
+
+
 def build(season=2026, rank_season=2027, min_gp=20):
-    ranks = {p["id"]: {"espn_rank": p.get("draftRanksByRankType", {}).get("STANDARD", {}).get("rank"),
-                       "roto_rank": p.get("draftRanksByRankType", {}).get("ROTO", {}).get("rank"),
-                       "auction": p.get("draftRanksByRankType", {}).get("STANDARD", {}).get("auctionValue") or 0,
-                       "adp": (p.get("ownership") or {}).get("averageDraftPosition"),
-                       "team": p.get("proTeamId"),          # 換隊後的新東家
-                       "injury": p.get("injuryStatus", "")}
-             for p in fetch(rank_season)}
-    rows = []
+    """主檔 = 新球季名單(含新秀與整季報銷的傷兵),再左連接上一季數據。
+
+    以前拿舊球季當主檔又用 GP>=20 過濾,結果 Sabonis / Trae / Tatum 這種
+    去年打不到 20 場的人整批消失在選秀板上,新秀更是完全沒出現。
+    """
+    stats = {}
     for p in fetch(season):
         t = totals(p, season)
         gp = t.get(S["GP"], 0)
-        if gp < min_gp:
-            continue
+        if gp:
+            stats[p["id"]] = dict({k: t.get(S[k], 0) / gp for k in STATS},
+                                  GP=gp, MIN=round(t.get(S["MIN"], 0) / gp, 1))
+    rows = []
+    for p in fetch(rank_season):
+        d = p.get("draftRanksByRankType") or {}
+        adp = (p.get("ownership") or {}).get("averageDraftPosition")
+        rk = d.get("STANDARD", {}).get("rank")
+        if not rk and not (adp and adp < 140):
+            continue                              # ESPN 完全沒排名的人不放進來
+        s = stats.get(p["id"])
         r = {"name": p["fullName"], "id": p["id"], "pos": POS.get(p.get("defaultPositionId"), "?"),
-             "GP": gp, "MIN": round(t.get(S["MIN"], 0) / gp, 1),
-             "injury": p.get("injuryStatus", ""), "team": p.get("proTeamId")}
-        for k in ("PTS", "REB", "AST", "STL", "BLK", "TO", "FGM", "FGA", "FTM", "FTA", "3PM"):
-            r[k] = t.get(S[k], 0) / gp          # 場均
-        r.update(ranks.get(p["id"], {}) or {})
+             "team": p.get("proTeamId"), "injury": p.get("injuryStatus", ""),
+             "espn_rank": rk, "roto_rank": d.get("ROTO", {}).get("rank"),
+             "auction": d.get("STANDARD", {}).get("auctionValue") or 0, "adp": adp,
+             "GP": s["GP"] if s else 0, "MIN": s["MIN"] if s else 0}
+        for k in STATS:
+            r[k] = s[k] if s else 0.0
+        r["sample"] = "ok" if r["GP"] >= min_gp else ("thin" if r["GP"] else "none")
         rows.append(r)
     return rows
 
@@ -111,14 +128,18 @@ def main():
     args = a.parse_args()
 
     rows = build(min_gp=args.min_gp)
+    ref = [r for r in rows if r["sample"] == "ok"]      # 基準只用樣本夠的人
     if args.mode == "pts":
         for r in rows:
             r["score"] = sum(w * r[c] for c, w in PTS_SCORING.items())
     else:
-        zscores(rows)
+        zscores(rows, ref)
     rows.sort(key=lambda r: -r["score"])
     for i, r in enumerate(rows, 1):
         r["my_rank"] = i
+    thin = sum(r["sample"] == "thin" for r in rows)
+    none = sum(r["sample"] == "none" for r in rows)
+    print(f"\n樣本充足 {len(ref)} 人 · 小樣本(<{args.min_gp} 場) {thin} 人 · 無數據(新秀等) {none} 人")
     shown = [r for r in rows if not args.pos or r["pos"] == args.pos][:args.top]
 
     hdr = f"{'#':>3} {'球員':<24}{'POS':<4}{'GP':>3}{'MIN':>6}{'分數':>7}{'ESPN':>6}{'ADP':>7}  差值"

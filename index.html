@@ -47,7 +47,9 @@ tbody tr.rec td{border-top-color:#25507f}
 .scroll{max-height:66vh;overflow:auto}
 .pos{color:var(--dim);font-size:11px}
 .pill{font-size:10px;padding:1px 5px;border-radius:4px;background:#2a2016;color:var(--warn);margin-left:4px}
+.pill.nodata{background:#1b2430;color:#8fb6e8}
 .edge-p{color:var(--good)}.edge-n{color:var(--dim)}
+.edge-w{color:var(--warn);font-weight:600}
 .bar{height:7px;border-radius:4px;background:#222a33;position:relative;overflow:hidden}
 .bar i{position:absolute;top:0;bottom:0;left:50%;background:var(--good)}
 .bar i.neg{background:var(--bad)}
@@ -113,7 +115,8 @@ const $=s=>document.querySelector(s), el=(t,c,h)=>{const e=document.createElemen
 const S=JSON.parse(localStorage.getItem('fbb')||'{}');
 const save=()=>localStorage.setItem('fbb',JSON.stringify(S));
 S.picks=S.picks||[]; S.nTeams=S.nTeams||12; S.slot=S.slot||1;
-S.order=S.order||'espn';   // 回測:ESPN 排名 ρ=.906 > 去年數據 ρ=.769
+S.order=S.order||'total';  // 預設用自己的分數;可切成 ESPN 排名(回測 ρ=.906)
+if(S.gp===undefined)S.gp=false;   // 出賽數折算預設關,見 durability()
 S.mine=[]; S.gone=[];   // 由 picks 推導,見 syncDraft()
 S.w=S.w||{...PRESETS['均衡(建議)']}; S.preset=S.preset||'均衡(建議)';
 let P=[], byId={}, T={}, tab='draft';
@@ -136,18 +139,31 @@ const logo=p=>tm(p).logo?`<img class="logo" src="${tm(p).logo}" alt="" loading="
 const posBadge=p=>`<span class="posb" style="color:var(--${p.pos})">${p.pos}</span>`;
 const abbrChip=p=>`<span class="abbr" style="background:${tm(p).color}">${tm(p).abbr}</span>`;
 
-// 出賽數折算:H2H 每週對戰,受傷坐板凳的球員拿不到分
-const durability=p=>S.gp===false?1:Math.min(1,(p.GP+8)/70);
-const catZ=(p,c)=>p['z'+c]*durability(p);
-const total=p=>CATS.reduce((s,c)=>s+S.w[c]*catZ(p,c),0);   // 加權總分
+const noData=p=>p.sample==='none';     // 新秀等,去年沒有 NBA 數據
+const thin=p=>p.sample==='thin';       // 有數據但場次太少
+/* 兩件不同的事,分開處理:
+   1. 可靠度 — 只打 5 場的場均數字不可信,往中間收縮。永遠開著。
+      滿季 = 1;19 場 ≈ .75;1 場 ≈ .19。
+      注意這救不回受傷的球星:他們的「場均」本身就是帶傷打出來的(Sabonis
+      去年 19 場只有 15.8 分 / 29.7 分鐘),不做收縮也一樣低。要看出這種
+      情況,靠下面的「落差」欄位跟 ESPN 排名對照。
+   2. 出賽數折算 — 假設「去年缺賽的人今年還會缺」。預設關閉,因為
+      受傷整季、今年健康歸隊的球員會被嚴重低估。要模擬 H2H 的出場風險再打開。 */
+const reliab=p=>(p.GP/(p.GP+10))/(70/80);
+const durability=p=>S.gp?Math.min(1,(p.GP+8)/70):1;
+// 無數據的人給 0(未知),不是負分 —— 沒資料不等於很爛
+const catZ=(p,c)=>noData(p)?0:p['z'+c]*Math.min(1,reliab(p))*durability(p);
+const total=p=>noData(p)?null:CATS.reduce((s,c)=>s+S.w[c]*catZ(p,c),0);   // 加權總分
+const totalOr=(p,d=-99)=>{const v=total(p);return v===null?d:v};
 const hasAdp=p=>p.adp&&p.adp<140;   // 140 = ESPN 未排名的預設值
 /* 排序依據。回測 312 人:ESPN 排名對「下一季實際 9-cat 表現」的 Spearman
    ρ=.906,去年實際數據只有 .769,混合反而更差 -> 預設用 ESPN 排名。
    但去年數據仍然不可少:類別強弱、建議、交易分析全部靠它。 */
 function orderer(pool){
   const bt={}, be={};
-  [...pool].sort((a,b)=>total(b)-total(a)).forEach((p,i)=>bt[p.id]=i);
-  [...pool].sort((a,b)=>(a.espn_rank||9999)-(b.espn_rank||9999)).forEach((p,i)=>be[p.id]=i);
+  [...pool].sort((a,b)=>totalOr(b)-totalOr(a)).forEach((p,i)=>bt[p.id]=i);
+  const er=p=>p.espn_rank||(hasAdp(p)?p.adp:9999);   // 新秀沒排名只有 ADP,尺度相同可遞補
+  [...pool].sort((a,b)=>er(a)-er(b)).forEach((p,i)=>be[p.id]=i);
   return p=>S.order==='total'?bt[p.id]
           :S.order==='espn'?be[p.id]
           :0.7*be[p.id]+0.3*bt[p.id];
@@ -156,7 +172,7 @@ const ORDER={espn:'ESPN 排名(回測最準)',total:'總分(去年數據)',mix:'
 // 分數熱度:綠(強)→ 灰(中)→ 紅(弱)
 const heat=v=>{const t=Math.max(-1,Math.min(1,v/8));
   return t>0?`hsl(${152-t*8} 65% ${52+t*14}%)`:`hsl(${6} ${45+(-t)*30}% ${58+t*10}%)`};
-const hot=(v,d=1)=>`<b style="color:${heat(v)}">${v.toFixed(d)}</b>`;
+const hot=(v,d=1)=>v===null?'<span class="pos">–</span>':`<b style="color:${heat(v)}">${v.toFixed(d)}</b>`;
 
 fetch('data.json').then(r=>r.json()).then(d=>{
   P=d.players||d; T=d.teams||{};                       // 舊格式(純陣列)也還能開
@@ -187,7 +203,8 @@ const fit=(p,w)=>CATS.reduce((s,c)=>s+w[c]*S.w[c]*catZ(p,c),0);
 function recSet(pool,ids,n=8){
   if(!ids.length)return new Set();
   const w=weights(ids);
-  return new Set([...pool].sort((a,b)=>fit(b,w)-fit(a,w)).slice(0,n).map(p=>p.id));
+  return new Set([...pool].filter(p=>!noData(p))     // 無數據的人無從判斷補不補洞
+    .sort((a,b)=>fit(b,w)-fit(a,w)).slice(0,n).map(p=>p.id));
 }
 
 function catBars(t,scale){
@@ -221,6 +238,8 @@ function playerTable(list,cols,rowAct,onSort,rec){
     tr.innerHTML=`<td class="l">${i+1}</td>`
       +`<td class="l name">${logo(p)}<span>${p.name}</span>`
       +`${rec&&rec.has(p.id)?'<span class="rechip">建議</span>':''}`
+      +`${noData(p)?'<span class="pill nodata">新秀/無數據</span>'
+         :thin(p)?`<span class="pill">去年僅 ${p.GP} 場</span>`:''}`
       +`${p.injury&&p.injury!=='ACTIVE'?`<span class="pill">${p.injury}</span>`:''}</td>`
       +`<td class="l">${abbrChip(p)}</td><td class="l">${posBadge(p)}</td>`
       +`<td>${p.GP}</td><td>${p.MIN}</td>`+cols.map(c=>`<td>${c.f(p)}</td>`).join('');
@@ -282,6 +301,7 @@ function draftView(app){
   os.value=S.order; os.onchange=()=>{S.order=os.value;save();render()};
   bar.append(os);
   bar.append(el('span','hint',' · 回測 312 人:ESPN 排名 ρ=.906、去年數據 ρ=.769'));
+  bar.append(el('span','hint',' · 小樣本已做可靠度收縮'));
   app.append(bar);
 
   const row=el('div','row'), left=el('div','card grow'), right=el('div','side card');
@@ -347,7 +367,8 @@ function standingsTable(){
     box.append(el('p','hint','開始選人之後,這裡會列出全部 '+S.nTeams+' 隊在 9 個類別的數字與名次。'));
     return box;
   }
-  const all=[...Array(S.nTeams).keys()].map(t=>({t,cat:teamCats(rosterOf(t)),n:rosterOf(t).length}));
+  const all=[...Array(S.nTeams).keys()].map(t=>({t,cat:teamCats(rosterOf(t)),n:rosterOf(t).length,
+    unk:rosterOf(t).filter(i=>byId[i]&&noData(byId[i])).length}));
   // 每個類別的名次
   const rk={};
   CATS.forEach(c=>{
@@ -363,7 +384,8 @@ function standingsTable(){
   const score=x=>CATS.filter(c=>rk[c][x.t]<=half).length;
   [...all].sort((a,b)=>score(b)-score(a)).forEach(x=>{
     const tr=el('tr'); if(x.t===S.slot-1)tr.classList.add('rec');
-    let html=`<td class="l"><b>${teamName(x.t)}</b></td><td>${x.n}</td>`;
+    let html=`<td class="l"><b>${teamName(x.t)}</b></td>`
+      +`<td>${x.n}${x.unk?`<sup class="rksup" title="其中 ${x.unk} 人無數據,未計入">+${x.unk}?</sup>`:''}</td>`;
     CATS.forEach(c=>{
       const r=rk[c][x.t];
       const col=r<=3?'var(--good)':r<=half?'var(--warn)':'var(--bad)';
@@ -375,6 +397,9 @@ function standingsTable(){
     tr.innerHTML=html; body.append(tr);
   });
   tb.append(body); wrap.append(tb); box.append(wrap);
+  const totUnk=all.reduce((s,x)=>s+x.unk,0);
+  if(totUnk)box.append(el('p','hint',
+    `⚠ 已選走的人裡有 <b>${totUnk}</b> 位沒有去年數據(新秀等),類別統計未計入 —— 人數欄的 <code>+N?</code> 就是。`));
   box.append(el('p','hint','數字 = 該隊該類別的 z 總和(已套用你的權重),右上小字 = 名次。'
     +`綠 = 前 3、黃 = 前段、紅 = 後段。「前段」= 排在前 ${half} 名的類別數,H2H 需要 5 類。`));
   return box;
@@ -406,7 +431,7 @@ function redrawDraft(){
   const w=weights(S.mine);
   let pool=P.filter(p=>!S.picks.includes(p.id))
     .filter(p=>p.name.toLowerCase().includes(q)&&(pf==='全部'||p.pos===pf))
-    .sort((a,b)=>total(b)-total(a));
+    .sort((a,b)=>totalOr(b)-totalOr(a));
   const ord=orderer(pool); pool.sort((a,b)=>ord(a)-ord(b));
   const rec=recSet(pool.slice(0,120),S.mine);        // 建議只從前 120 名裡挑
   const t=onClock(), mineTurn=t===S.slot-1;
@@ -414,9 +439,14 @@ function redrawDraft(){
     {h:'補洞',f:p=>S.mine.length?fit(p,w).toFixed(1):'-'},
     {h:'ADP',f:p=>hasAdp(p)?Math.round(p.adp):'-'},
     {h:'$',f:p=>p.auction?`<span style="color:var(--warn)">$${p.auction}</span>`:'-'},
-    {h:'撿便宜',f:p=>{if(!hasAdp(p))return '-';
-      const e=p.adp-(pool.indexOf(p)+1);
-      return `<span class="${e>8?'edge-p':'edge-n'}">${e>0?'+':''}${Math.round(e)}</span>`}}];
+    {h:'落差',f:p=>{
+      const er=p.espn_rank||(hasAdp(p)?Math.round(p.adp):null);
+      if(!er)return '-';
+      const e=er-(pool.indexOf(p)+1);
+      // + = ESPN 排得比我們低,我們更看好(可能撿便宜)
+      // − = ESPN 排得比我們高,通常是去年受傷、數據失真的球星
+      const cls=e>=25?'edge-p':e<=-25?'edge-w':'edge-n';
+      return `<span class="${cls}" title="${e>=25?'ESPN 沒那麼看好,可能撿便宜':e<=-25?'ESPN 明顯更看好 —— 多半是去年受傷、場均失真':''}">${e>0?'+':''}${e}</span>`}}];
   const tbl=playerTable(pool.slice(0,250),cols,(p,td)=>{
     const a=el('button','act'+(mineTurn?' pick':''),mineTurn?'我選':'選走');
     a.title=`歸給 ${teamName(t)}`;
@@ -468,7 +498,7 @@ const allCols=()=>[{h:'總分',k:'total',f:p=>hot(total(p),2)}]
             {h:'ESPN',k:'espn_rank',f:p=>p.espn_rank||'-'}]);
 function allList(){
   const q=(S.q2||'').toLowerCase(), pf=$('#pf2')?.value||'全部';
-  const key=p=>S.sort==='total'?total(p)
+  const key=p=>S.sort==='total'?totalOr(p)
     :S.sort==='adp'?-(hasAdp(p)?p.adp:999)
     :S.sort==='espn_rank'?-(p.espn_rank||999)
     :S.sort==='auction'?(p.auction||0)
@@ -566,7 +596,7 @@ function faView(app){
   const owned=new Set(S.teams.flatMap(t=>t.roster));
   const my=S.teams.find(t=>t.id===S.myTeam).roster;
   const w=weights(my);
-  const fa=P.filter(p=>!owned.has(p.id)).sort((a,b)=>total(b)-total(a));
+  const fa=P.filter(p=>!owned.has(p.id)).sort((a,b)=>totalOr(b)-totalOr(a));
   const rec=recSet(fa.slice(0,80),my);
   const row=el('div','row'), left=el('div','card grow'), right=el('div','side card');
   right.append(el('h2',null,'我的隊伍體質'));
