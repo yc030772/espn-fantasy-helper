@@ -128,7 +128,7 @@ const $=s=>document.querySelector(s), el=(t,c,h)=>{const e=document.createElemen
 const S=JSON.parse(localStorage.getItem('fbb')||'{}');
 const save=()=>localStorage.setItem('fbb',JSON.stringify(S));
 S.picks=S.picks||[]; S.nTeams=S.nTeams||12; S.slot=S.slot||1;
-S.dsort=S.dsort||{k:'mine',dir:1};   // 選秀頁排序:預設我的排序、升冪
+S.dsort=S.dsort||{k:'total',dir:-1};  // 選秀頁排序:預設總分降冪
 S.fsort=S.fsort||{k:'total',dir:-1};  // FA 頁
 S.asort=S.asort||{k:'total',dir:-1};  // 總分表
 if(S.gp===undefined)S.gp=false;   // 出賽數折算預設關,見 durability()
@@ -255,8 +255,12 @@ function fixedCols(rec){return [
 
 /* 依 sort={k,dir} 排序。沒有值的球員(新秀)永遠排最後,不論升降冪。 */
 function sortList(list,cols,sort){
-  const c=[...fixedCols(),...cols].find(x=>x.k===sort.k);
-  if(!c||!c.v)return list;
+  let c=[...fixedCols(),...cols].find(x=>x.k===sort.k);
+  if(!c||!c.v){                       // 欄位已移除或舊設定失效 -> 退回總分降冪
+    sort.k='total'; sort.dir=-1;
+    c=cols.find(x=>x.k==='total');
+    if(!c)return list;
+  }
   const big=Number.MAX_SAFE_INTEGER;
   return [...list].sort((a,b)=>{
     let av=c.v(a),bv=c.v(b);
@@ -470,15 +474,16 @@ function redrawDraft(){
     {h:'ESPN 排序',k:'espn',v:p=>p.espn_rank||null,
      f:p=>p.espn_rank?`<b>${p.espn_rank}</b>`
        :`<span class="pos" title="ESPN 尚未給排名(多為新秀),這裡只有 ADP ${hasAdp(p)?Math.round(p.adp):'也沒有'}">–</span>`},
-    {h:'我的排序',k:'mine',v:p=>p.mrank,
-     f:p=>p.mrank?`<b>${p.mrank}</b>`:'<span class="pos" title="無去年數據,無法評分">–</span>'},
     // + = ESPN 排得比我們低,我們更看好(可能撿便宜)
     // − = ESPN 排得比我們高,通常是去年受傷、場均失真的球星
+    // 落差 = ESPN 排名 − 我方名次(名次由總分高到低排出,不另外佔一欄)
     {h:'落差',k:'gap',desc:1,v:p=>gap(p),f:p=>{
       const e=gap(p);
       if(e===null)return '-';
       const cls=e>=25?'edge-p':e<=-25?'edge-w':'edge-n';
-      return `<span class="${cls}" title="${e>=25?'ESPN 沒那麼看好,可能撿便宜':e<=-25?'ESPN 明顯更看好 —— 多半是去年受傷、場均失真':''}">${e>0?'+':''}${e}</span>`}},
+      return `<span class="${cls}" title="ESPN #${p.espn_rank} vs 我方總分名次 #${p.mrank}`
+        +`${e>=25?' —— ESPN 沒那麼看好,可能撿便宜':e<=-25?' —— ESPN 明顯更看好,多半是去年受傷、場均失真':''}">`
+        +`${e>0?'+':''}${e}</span>`}},
     {h:'總分',k:'total',desc:1,v:p=>total(p),f:p=>hot(total(p))},
     {h:'補洞',k:'fit',desc:1,v:p=>S.mine.length&&!noData(p)?fit(p,w):null,
      f:p=>S.mine.length&&!noData(p)?fit(p,w).toFixed(1):'-'},
