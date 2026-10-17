@@ -129,8 +129,11 @@ const S=JSON.parse(localStorage.getItem('fbb')||'{}');
 const save=()=>localStorage.setItem('fbb',JSON.stringify(S));
 S.picks=S.picks||[]; S.nTeams=S.nTeams||12; S.slot=S.slot||1;
 // 拍賣模式:owner[i]/price[i] 與 picks[i] 平行,第 i 個成交的人歸誰、花多少
-S.auction=!!S.auction; S.owner=S.owner||[]; S.price=S.price||[];
-S.budget=S.budget||200; S.rsize=S.rsize||13; S.bidder=S.bidder||0;
+S.owner=S.owner||[]; S.price=S.price||[];
+// 舊版蛇型選秀存的 picks 沒有得標隊伍/價格,對不上就清掉
+if(S.owner.length!==S.picks.length||S.price.length!==S.picks.length){S.picks=[];S.owner=[];S.price=[]}
+delete S.auction;
+S.budget=S.budget||200; S.reserve=S.reserve||2; S.rsize=S.rsize||13; S.bidder=S.bidder||0;
 S.dsort=S.dsort||{k:'total',dir:-1};  // 選秀頁排序:預設總分降冪
 S.fsort=S.fsort||{k:'total',dir:-1};  // FA 頁
 S.asort=S.asort||{k:'total',dir:-1};  // 總分表
@@ -138,16 +141,16 @@ if(S.gp===undefined)S.gp=false;   // 出賽數折算預設關,見 durability()
 S.mine=[]; S.gone=[];   // 由 picks 推導,見 syncDraft()
 S.w=S.w||{...PRESETS['均衡(建議)']}; S.preset=S.preset||'均衡(建議)';
 let P=[], byId={}, T={}, tab='draft';
-/* 蛇型:第 0 輪 0→n-1,第 1 輪 n-1→0,依此類推 */
-const teamOf=i=>{if(S.auction)return S.owner[i];const n=S.nTeams,r=Math.floor(i/n),p=i%n;return r%2?n-1-p:p};
+const teamOf=i=>S.owner[i];
 const rosterOf=t=>S.picks.filter((_,i)=>teamOf(i)===t);
-const onClock=()=>teamOf(S.picks.length);
 const teamName=t=>t===S.slot-1?'我':(S.teams&&S.teams[t]?S.teams[t].name:`Team ${t+1}`);
 /* --- 拍賣 --- */
 const spent=t=>S.price.reduce((s,x,i)=>s+(S.owner[i]===t?x:0),0);
 const moneyLeft=t=>S.budget-spent(t);
-// 還能出的最高價 = 剩餘預算 − 其他空位每格至少 $1
-const maxBid=t=>{const open=S.rsize-rosterOf(t).length;return open>0?moneyLeft(t)-(open-1):0};
+// 還能出的最高價 = 剩餘預算 − 其他空位的保留金。別隊照 ESPN 規則每格 $1;
+// 我自己每格保留 S.reserve(預設 $2),尾盤才能用 $2 搶下別人只出得起 $1 的人
+const maxBid=t=>{const open=S.rsize-rosterOf(t).length,r=t===S.slot-1?S.reserve:1;
+  return open>0?Math.max(0,moneyLeft(t)-(open-1)*r):0};
 /* 建議出價:
    1. 我方價值 = 每人 $1 底價 + 依「總分超出替補水準」分配剩下的錢。
       替補水準 = 第 隊數×人數 名的總分(這之後的人會是 $1 或沒人要)。
@@ -169,11 +172,6 @@ function auctionValues(){
 }
 let AV={v:{},infl:1};
 const bid=p=>{const x=AV.v[p.id];return x?Math.max(1,Math.round(1+(x-1)*AV.infl)):null};
-/* 我下一次輪到的是第幾順位(1-based),沒有則 null */
-function nextMyPick(){
-  for(let i=S.picks.length;i<S.nTeams*14;i++) if(teamOf(i)===S.slot-1) return i+1;
-  return null;
-}
 function syncDraft(){
   S.mine=rosterOf(S.slot-1);
   S.gone=S.picks.filter(id=>!S.mine.includes(id));
@@ -335,14 +333,14 @@ const num=(k,d=1)=>({h:k,f:p=>(p[k]??0).toFixed(d)});
 function render(){
   const app=$('#app'); app.innerHTML='';
   if(!P.length){app.append(el('p','hint','載入中…'));return}
-  syncDraft(); computeRanks(); if(S.auction)AV=auctionValues();
+  syncDraft(); computeRanks(); AV=auctionValues();
   ({draft:draftView,all:allView,trade:tradeView,fa:faView,league:leagueView})[tab](app);
 }
 
 function draftView(app){
   /* --- 最上面:聯盟設定與現在輪到誰 --- */
   const setup=el('div','card'); setup.style.marginBottom='12px';
-  setup.append(el('h2',null,S.auction?'拍賣選秀設定':'蛇型選秀設定'));
+  setup.append(el('h2',null,'拍賣選秀設定'));
   const line=el('div','draftbar');
   const mk=(label,val,min,max,on)=>{
     const g=el('span'); g.append(el('span','pos',label+' '));
@@ -351,14 +349,8 @@ function draftView(app){
     g.append(i); return g;
   };
   line.append(mk('隊伍數',S.nTeams,2,20,v=>{S.nTeams=v;S.slot=Math.min(S.slot,v);save();render()}));
-  line.append(mk(S.auction?'我是第幾隊':'我的順位',S.slot,1,S.nTeams,v=>{S.slot=v;save();render()}));
-  const am=el('label','chk'); am.innerHTML='<input type="checkbox"'+(S.auction?' checked':'')+'> 拍賣模式';
-  am.querySelector('input').onchange=e=>{
-    if(S.picks.length&&!confirm('切換模式會清空選秀板,確定?')){e.target.checked=S.auction;return}
-    S.auction=e.target.checked; S.picks=[]; S.owner=[]; S.price=[]; save(); render();
-  };
-  line.append(am);
-  if(S.auction)draftAuctionBar(line,mk); else draftSnakeBar(line);
+  line.append(mk('我是第幾隊',S.slot,1,S.nTeams,v=>{S.slot=v;save();render()}));
+  draftAuctionBar(line,mk);
 
   const un=el('button','act','復原上一手'); un.onclick=()=>{S.picks.pop();S.owner.pop();S.price.pop();save();render()};
   const rs=el('button','act','重置選秀'); rs.onclick=()=>{if(confirm('清空整個選秀板?')){S.picks=[];S.owner=[];S.price=[];save();render()}};
@@ -373,27 +365,13 @@ function draftView(app){
 function draftAuctionBar(line,mk){
   line.append(mk('預算',S.budget,1,9999,v=>{S.budget=v;save();render()}));
   line.append(mk('每隊人數',S.rsize,1,30,v=>{S.rsize=v;save();render()}));
-  const g=el('span'); g.append(el('span','pos','得標 '));
-  const sel=el('select'); sel.id='bidder';
-  for(let t=0;t<S.nTeams;t++)sel.append(new Option(`${teamName(t)} ($${moneyLeft(t)})`,t));
-  sel.value=S.bidder; sel.onchange=()=>{S.bidder=+sel.value;save()};
-  // 目前喊價:邊打邊更新表格的「可再加」欄,成交時也當作得標價
-  const pr=Object.assign(document.createElement('input'),{type:'number',id:'price',min:1,placeholder:'目前喊價',value:S.cur||''});
-  pr.style.width='90px'; pr.oninput=()=>{S.cur=+pr.value||0;save();redrawDraft()};
-  g.append(sel,' ',pr); line.append(g);
+  line.append(mk('我每格保留 $',S.reserve,1,20,v=>{S.reserve=v;save();render()}));
   line.append(el('span','clock me',`我剩 <b>$${moneyLeft(S.slot-1)}</b> · 最高可出 <b>$${maxBid(S.slot-1)}</b>`
     +` · 通膨 ×${AV.infl.toFixed(2)}`));
 }
-function draftSnakeBar(line){
-  const i=S.picks.length, rd=Math.floor(i/S.nTeams)+1, pk=i%S.nTeams+1, t=onClock();
-  const mine=t===S.slot-1;
-  const clock=el('span','clock'+(mine?' me':''));
-  clock.innerHTML=`第 ${rd} 輪 · 第 ${pk} 順位 &nbsp;→&nbsp; <b>${mine?'輪到你':teamName(t)}</b>`;
-  line.append(clock);
-  const nx=nextMyPick();
-  if(!mine&&nx) line.append(el('span','hint',`你的下一手是第 ${nx} 順位(還要等 ${nx-i-1} 人)`));
-}
 function draftRest(app){
+  const nom=el('div','card'); nom.id='nom'; nom.style.marginBottom='12px';
+  app.append(nom); drawNom();
 
   /* --- 搜尋列 --- */
   const bar=el('div','card',''); bar.style.marginBottom='12px';
@@ -402,8 +380,7 @@ function draftRest(app){
   const sel=el('select'); sel.id='pf';
   ['全部','PG','SG','SF','PF','C'].forEach(o=>sel.append(new Option(o,o)));
   sel.onchange=redrawDraft; bar.append(' ',sel,' ');
-  bar.append(el('span','hint','點任一欄位標題排序,再點一次換升/降冪。ESPN 排序 = ESPN 自己的排名(388 人有),'
-    +'新秀顯示「–」請改點 ADP 欄 · 回測 312 人:ESPN ρ=.906、我們 ρ=.769'));
+  bar.append(el('span','hint','點任一欄位標題排序,再點一次換升/降冪。ESPN 排序 = ESPN 類別(ROTO)排名 · 回測 312 人:ESPN ρ=.906、我們 ρ=.769'));
   app.append(bar);
 
   const strip=el('div','card'); strip.id='stand'; strip.style.marginBottom='12px';
@@ -412,7 +389,7 @@ function draftRest(app){
   drawStandings();
   redrawDraft();
   app.append(standingsTable());
-  if(S.auction)app.append(saleLog());
+  app.append(saleLog());
   app.append(boardView());
 }
 /* --- 拍賣成交紀錄:誰被哪隊用多少買走,可直接改隊伍/價格或刪除 --- */
@@ -533,11 +510,11 @@ function boardView(){
   for(let t=0;t<S.nTeams;t++){
     const col=el('div','bcol'+(t===S.slot-1?' bme':''));
     col.append(el('div','bhead',`${teamName(t)} <span class="pos">${rosterOf(t).length}</span>`
-      +(S.auction?` <span class="pos">$${moneyLeft(t)} · 最高 $${maxBid(t)}</span>`:'')));
+      +` <span class="pos">$${moneyLeft(t)} · 最高 $${maxBid(t)}</span>`));
     S.picks.forEach((id,i)=>{
       if(teamOf(i)!==t)return;
       const p=byId[id]; if(!p)return;
-      const d=el('div','bp',`${logo(p)}<span>${p.name}</span>`+(S.auction?` <span class="pos">$${S.price[i]}</span>`:''));
+      const d=el('div','bp',`${logo(p)}<span>${p.name}</span>`+` <span class="pos">$${S.price[i]}</span>`);
       d.style.borderLeftColor=tm(p).color;
       d.title=`第 ${i+1} 順位 · 總分 ${total(p).toFixed(1)}`;
       col.append(d);
@@ -553,23 +530,12 @@ function redrawDraft(){
   let pool=P.filter(p=>!S.picks.includes(p.id))
     .filter(p=>p.name.toLowerCase().includes(q)&&(pf==='全部'||p.pos===pf));
   const rec=recSet([...pool].filter(p=>p.mrank).sort((a,b)=>a.mrank-b.mrank).slice(0,120),S.mine);
-  const t=onClock(), mineTurn=t===S.slot-1;
   const cz=(p,c)=>noData(p)?null:S.w[c]*catZ(p,c);
   const cols=[
     // 欄位 1、2:兩套排序
     {h:'ESPN 排序',k:'espn',v:p=>p.espn_rank||null,
      f:p=>p.espn_rank?`<b>${p.espn_rank}</b>`
        :`<span class="pos" title="ESPN 尚未給排名(多為新秀),這裡只有 ADP ${hasAdp(p)?Math.round(p.adp):'也沒有'}">–</span>`},
-    // + = ESPN 排得比我們低,我們更看好(可能撿便宜)
-    // − = ESPN 排得比我們高,通常是去年受傷、場均失真的球星
-    // 落差 = ESPN 排名 − 我方名次(名次由總分高到低排出,不另外佔一欄)
-    {h:'落差',k:'gap',desc:1,v:p=>gap(p),f:p=>{
-      const e=gap(p);
-      if(e===null)return '-';
-      const cls=e>=25?'edge-p':e<=-25?'edge-w':'edge-n';
-      return `<span class="${cls}" title="ESPN #${p.espn_rank} vs 我方總分名次 #${p.mrank}`
-        +`${e>=25?' —— ESPN 沒那麼看好,可能撿便宜':e<=-25?' —— ESPN 明顯更看好,多半是去年受傷、場均失真':''}">`
-        +`${e>0?'+':''}${e}</span>`}},
     {h:'總分',k:'total',desc:1,v:p=>total(p),f:p=>hot(total(p))},
     {h:'補洞',k:'fit',desc:1,v:p=>S.mine.length&&!noData(p)?fit(p,w):null,
      f:p=>S.mine.length&&!noData(p)?fit(p,w).toFixed(1):'-'},
@@ -577,39 +543,68 @@ function redrawDraft(){
      f:p=>{const v=cz(p,c);return v===null?'<span class="pos">–</span>'
        :`<span style="color:${heat(v*2.2)}">${v.toFixed(1)}</span>`}})))
    .concat([
-    {h:'ADP',k:'adp',v:p=>hasAdp(p)?p.adp:null,f:p=>hasAdp(p)?Math.round(p.adp):'-'},
     {h:'$',k:'auction',desc:1,v:p=>p.auction||null,
      f:p=>p.auction?`<span style="color:var(--warn)">$${p.auction}</span>`:'-'},
   ]);
-  if(S.auction){
+  {
     const my=maxBid(S.slot-1);
     cols.unshift({h:'建議 $',k:'bid',desc:1,v:p=>bid(p),f:p=>{const b=bid(p);
       return b===null?'-':`<b style="color:${b>my?'var(--bad)':'var(--good)'}" title="${b>my?'超過你最高可出的 $'+my:''}">$${b}</b>`}});
     // 可再加 = 建議價 − 目前喊價。≥0 還不算溢價;<0 = 已溢價多少
-    const room=p=>{const b=bid(p);return b!==null&&S.cur?Math.min(b,my)-S.cur:null};
-    cols.splice(1,0,{h:'可再加',k:'room',desc:1,v:room,f:p=>{const r=room(p);
-      return r===null?'-':r>=0?`<b style="color:var(--good)">+$${r}</b>`:`<b style="color:var(--bad)">溢價 $${-r}</b>`}});
   }
   pool=sortList(pool,cols,S.dsort);
-  const tbl=playerTable(pool.slice(0,250),cols,S.auction?(p,td)=>{
-    const a=el('button','act','成交');
-    a.onclick=()=>{
-      const t=+$('#bidder').value, x=+$('#price').value;
-      if(!(x>=1))return alert('先在上方填得標價格');
-      if(x>maxBid(t)&&!confirm(`${teamName(t)} 最高只能出 $${maxBid(t)},仍要記錄?`))return;
-      S.picks.push(p.id);S.owner.push(t);S.price.push(x);S.cur=0;save();render();
-    };
-    td.append(a);
-  }:(p,td)=>{
-    const a=el('button','act'+(mineTurn?' pick':''),mineTurn?'我選':'選走');
-    a.title=`歸給 ${teamName(t)}`;
-    a.onclick=()=>{S.picks.push(p.id);save();render()};
-    td.append(a);
-  },c=>{toggleSort(S.dsort,c);save();redrawDraft()},rec,S.dsort);
+  const shown=pool.slice(0,250);
+  const tbl=playerTable(shown,cols,null,c=>{toggleSort(S.dsort,c);save();redrawDraft()},rec,S.dsort);
+  // 點人名 -> 上方出價面板
+  tbl.querySelectorAll('tbody tr').forEach((tr,i)=>{
+    const td=tr.querySelector('td.name'); td.style.cursor='pointer'; td.title='點我登記出價';
+    if(shown[i].id===S.nom)tr.style.outline='2px solid var(--accent)';
+    td.onclick=()=>{S.nom=shown[i].id;S.cur=0;save();drawNom();redrawDraft();$('#nom').scrollIntoView({behavior:'smooth'})};
+  });
   const cn=[...fixedCols(),...cols].find(c=>c.k===S.dsort.k);
   const dl=$('#dl'); dl.innerHTML='';
-  dl.append(el('h2',null,`球員排名(依${cn?cn.h:'?'} ${S.dsort.dir<0?'降冪':'升冪'})`
-    +(S.auction?'':` — 目前輪到 ${mineTurn?'你':teamName(t)}`)),tbl);
+  dl.append(el('h2',null,`球員排名(依${cn?cn.h:'?'} ${S.dsort.dir<0?'降冪':'升冪'})`),tbl);
+}
+
+/* --- 出價面板:點表格裡的人名 -> 在這裡填目前喊價、選得標隊伍、成交 --- */
+function drawNom(){
+  const box=$('#nom'); if(!box)return; box.innerHTML='';
+  const p=byId[S.nom];
+  if(!p||S.picks.includes(p.id)){box.append(el('p','hint','點下方表格的<b>球員名字</b>開始登記出價。'));return}
+  const b=bid(p), my=maxBid(S.slot-1);
+  box.append(el('h2',null,`${logo(p)} ${p.name} <span class="pos">建議 $${b??'-'} · ESPN $${p.auction||'-'} · 我最高可出 $${my}</span>`));
+  const line=el('div','draftbar');
+  const pr=Object.assign(document.createElement('input'),{type:'number',id:'price',min:1,placeholder:'目前喊價',value:S.cur||''});
+  pr.style.width='90px';
+  // 得標隊伍:可打字,瀏覽器原生 datalist 跳出建議
+  const sel=Object.assign(document.createElement('input'),{type:'text',id:'bidder',placeholder:'得標隊伍(打字搜尋)'});
+  sel.setAttribute('list','teamlist'); sel.style.width='220px';
+  const dl=el('datalist'); dl.id='teamlist';
+  for(let t=0;t<S.nTeams;t++){const o=new Option(teamName(t));o.label=`$${moneyLeft(t)} · 最高 $${maxBid(t)}`;dl.append(o)}
+  const findTeam=v=>{v=v.trim().toLowerCase(); if(!v)return -1;
+    const names=[...Array(S.nTeams).keys()].map(t=>[t,teamName(t).toLowerCase()]);
+    const hit=names.find(x=>x[1]===v)||names.filter(x=>x[1].includes(v)).reduce((a,x,_,all)=>all.length===1?x:a,null);
+    return hit?hit[0]:-1};
+  // 可再加 = min(建議價, 我最高可出) − 目前喊價
+  const room=el('span','clock');
+  const upd=()=>{
+    const x=S.cur, r=b===null||!x?null:Math.min(b,my)-x;
+    room.innerHTML=r===null?'輸入喊價看還能加多少':r>=0?`還可再加 <b style="color:var(--good)">$${r}</b>`
+      :`<b style="color:var(--bad)">溢價 $${-r}</b>`;
+  };
+  pr.oninput=()=>{S.cur=+pr.value||0;save();upd()};
+  const ok=el('button','act pick','成交');
+  ok.onclick=()=>{
+    const t=findTeam(sel.value), x=+pr.value;
+    if(!(x>=1))return alert('先填得標價格');
+    if(t<0)return alert('找不到這隊,請從建議清單選');
+    if(x>maxBid(t)&&!confirm(`${teamName(t)} 最高只能出 $${maxBid(t)},仍要記錄?`))return;
+    S.picks.push(p.id);S.owner.push(t);S.price.push(x);S.cur=0;S.nom=null;save();render();
+  };
+  const no=el('button','act','取消'); no.onclick=()=>{S.nom=null;S.cur=0;save();drawNom()};
+  line.append(el('span','pos','目前喊價 $'),pr,' ',room,el('span','pos',' 得標 '),sel,dl,' ',ok,no);
+  box.append(line); upd();
+  pr.focus();
 }
 
 /* ---------- 總分表(全部球員 + 可調權重) ---------- */
