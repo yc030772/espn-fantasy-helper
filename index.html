@@ -143,7 +143,9 @@ S.w=S.w||{...PRESETS['均衡(建議)']}; S.preset=S.preset||'均衡(建議)';
 let P=[], byId={}, T={}, tab='draft';
 const teamOf=i=>S.owner[i];
 const rosterOf=t=>S.picks.filter((_,i)=>teamOf(i)===t);
-const teamName=t=>t===S.slot-1?'me':(S.teams&&S.teams[t]?S.teams[t].name:`Team ${t+1}`);
+const realName=t=>S.teams&&S.teams[t]?S.teams[t].name:`Team ${t+1}`;
+// 我方顯示「me (真實隊名)」:打 me 或打自己隊名都找得到,也看得出 me 對到哪一隊
+const teamName=t=>t===S.slot-1?`me (${realName(t)})`:realName(t);
 /* --- 拍賣 --- */
 const spent=t=>S.price.reduce((s,x,i)=>s+(S.owner[i]===t?x:0),0);
 const moneyLeft=t=>S.budget-spent(t);
@@ -601,7 +603,7 @@ function drawNom(){
   sel.setAttribute('list','teamlist'); sel.style.width='220px';
   const dl=el('datalist'); dl.id='teamlist';
   for(let t=0;t<S.nTeams;t++){const o=new Option(teamName(t));o.label=`$${moneyLeft(t)} · 最高 $${maxBid(t)}`;dl.append(o)}
-  const findTeam=v=>{v=v.trim().toLowerCase(); if(!v)return -1;
+  const findTeam=v=>{v=v.trim().toLowerCase(); if(!v)return -1; if(v==='me')return S.slot-1;   // me 跟 Messi 撞字首,特別處理
     const names=[...Array(S.nTeams).keys()].map(t=>[t,teamName(t).toLowerCase()]);
     const hit=names.find(x=>x[1]===v)||names.filter(x=>x[1].includes(v)).reduce((a,x,_,all)=>all.length===1?x:a,null);
     return hit?hit[0]:-1};
