@@ -561,7 +561,7 @@ function redrawDraft(){
   tbl.querySelectorAll('tbody tr').forEach((tr,i)=>{
     const td=tr.querySelector('td.name'); td.style.cursor='pointer'; td.title='點我登記出價';
     if(shown[i].id===S.nom)tr.style.outline='2px solid var(--accent)';
-    td.onclick=()=>{S.nom=shown[i].id;S.cur=0;save();drawNom();redrawDraft();$('#nom').scrollIntoView({behavior:'smooth'})};
+    td.onclick=()=>{S.nom=shown[i].id;S.cur=0;save();drawNom();redrawDraft()};
   });
   const cn=[...fixedCols(),...cols].find(c=>c.k===S.dsort.k);
   $('#dlh').innerHTML=`球員排名(依${cn?cn.h:'?'} ${S.dsort.dir<0?'降冪':'升冪'})`;
@@ -579,13 +579,13 @@ function drawNom(){
   ps.oninput=()=>{const v=ps.value.trim().toLowerCase();
     const q=P.find(p=>!S.picks.includes(p.id)&&p.name.toLowerCase()===v);
     if(q){S.nom=q.id;S.cur=0;save();drawNom();redrawDraft()}};
-  const p=byId[S.nom];
-  if(!p||S.picks.includes(p.id)){
-    const l=el('div','draftbar'); l.append(el('span','pos','球員 '),ps,pl,el('span','hint',' 或點下方表格的球員名字'));
-    box.append(l); ps.focus(); return}
-  ps.value=p.name; ps.onfocus=()=>ps.select();
-  const b=bid(p), my=maxBid(S.slot-1);
-  box.append(el('h2',null,`${logo(p)} ${p.name} <span class="pos">建議 $${b??'-'} · ESPN $${p.auction||'-'} · 我最高可出 $${my}</span>`));
+  // 沒選球員時也畫出整個面板(欄位停用),高度不變,點人名時下面的表格不會跳
+  let p=byId[S.nom]; if(p&&S.picks.includes(p.id))p=null;
+  const my=maxBid(S.slot-1);
+  if(p){ps.value=p.name; ps.onfocus=()=>ps.select();}
+  box.append(p?el('h2',null,`${logo(p)} ${p.name} <span class="pos">建議 $${bid(p)??'-'} · ESPN $${p.auction||'-'} · 我最高可出 $${my}</span>`)
+    :el('h2','pos',`尚未選球員 —— 打字搜尋或點下方人名 <span class="pos">· 我最高可出 $${my}</span>`));
+  box.lastChild.style.minHeight='44px';   // 空/有球員同高(窄螢幕球員資訊會折成兩行)
   const line=el('div','draftbar');
   const pr=Object.assign(document.createElement('input'),{type:'number',id:'price',min:1,placeholder:'目前喊價',value:S.cur||''});
   pr.style.width='90px';
@@ -610,7 +610,8 @@ function drawNom(){
   const no=el('button','act','取消'); no.onclick=()=>{S.nom=null;S.cur=0;save();drawNom()};
   line.append(el('span','pos','球員 '),ps,pl,el('span','pos',' 目前喊價 $'),pr,el('span','pos',' 得標 '),sel,dl,' ',ok,no);
   box.append(line);
-  pr.focus();
+  if(!p){[pr,sel,ok,no].forEach(x=>x.disabled=true);return}
+  pr.focus({preventScroll:true});   // 不捲動畫面
 }
 
 /* ---------- 總分表(全部球員 + 可調權重) ---------- */
