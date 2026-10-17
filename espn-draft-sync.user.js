@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ESPN 拍賣選秀 → Fantasy 助手
 // @namespace    fantasy-helper
-// @version      1.3
+// @version      1.5
 // @description  讀 ESPN 選秀室右側 Picks 清單(誰用多少錢買走誰),即時同步到本機的 Fantasy 助手
 // @match        https://fantasy.espn.com/basketball/draft*
 // @match        http://localhost:*/*
@@ -55,12 +55,17 @@ function drawDash(d) {
       background: '#1b1f27', color: '#e6e6e6', borderRadius: '10px', padding: '12px 14px',
       font: '14px/1.4 -apple-system,system-ui,sans-serif', boxShadow: '0 4px 16px rgba(0,0,0,.4)' });
     box.onclick = e => { if (e.target.closest('.fh-h')) box.classList.toggle('fh-min'); draw(); };
+    addEventListener('resize', draw);
     document.body.append(box);
   }
   // 對齊 Picks 那一欄:找文字剛好是「Picks」的標題,用它所在欄位的位置與寬度;找不到就靠右上
-  const h = [...document.querySelectorAll('body *')].find(e => !e.children.length && e.textContent.trim() === 'Picks');
+  // 只認看得到的那個(ESPN 可能有隱藏的同名元素,寬度 0 會讓儀表板跟著隱形)
+  const h = [...document.querySelectorAll('body *')].find(e => !e.children.length && e.textContent.trim() === 'Picks'
+    && e.parentElement.getBoundingClientRect().width > 150);
   if (h) { const r = h.parentElement.getBoundingClientRect(), t = h.getBoundingClientRect();
     Object.assign(box.style, { left: r.left + 'px', right: 'auto', width: r.width + 'px', top: t.bottom + 8 + 'px' }); }
+  else Object.assign(box.style, { left: 'auto', right: '30px', width: '300px', top: '200px' });
+  if (!d) { box.innerHTML = `<b>Fantasy 助手</b><div style="color:${C.dim}">等待助手資料…請開著助手分頁</div>`; return; }
   const $ = (v, c) => `<b style="color:${c};font-size:18px">${v == null ? '–' : '$' + v}</b>`;
   const rc = r => r <= 3 ? C.good : r <= d.half ? C.warn : C.bad;
   const lc = d.left == null ? C.dim : d.left <= d.open / 2 ? C.good : d.left <= d.open ? C.warn : C.bad;
@@ -75,15 +80,23 @@ function drawDash(d) {
       + `<div style="flex:1;min-width:44px;text-align:center;border:1px solid ${C.blue};border-radius:6px;padding:4px 0">`
       + `<div style="font-size:11px;color:${C.dim}">前段</div><b>${d.cats.filter(x => x.r <= d.half).length}/9</b></div></div>`
     : `<div style="color:${C.dim}">買到第一個人之後顯示 9 類別名次</div>`;
-  box.innerHTML = head + (d.name ? prices : `<div style="margin:6px 0 10px">我最高可出 ${$(d.my, C.blue)}</div>`) + cats;
+  // 補洞前五 / 總分前五(剩下還沒被買走的人)
+  const list = (t, xs, empty) => `<div style="margin-top:10px;font-size:12px"><div style="color:${C.dim};margin-bottom:2px">${t}</div>`
+    + (xs ? xs.map((x, i) => `<div style="display:flex;gap:6px"><span style="color:${C.dim};width:12px">${i + 1}</span>`
+      + `<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${x.n}</span>`
+      + `<span style="color:${C.dim}">${x.v}</span><b style="color:${C.good};width:34px;text-align:right">${x.b == null ? '–' : '$' + x.b}</b></div>`).join('')
+      : `<div style="color:${C.dim}">${empty}</div>`) + '</div>';
+  box.innerHTML = head + (d.name ? prices : `<div style="margin:6px 0 10px">我最高可出 ${$(d.my, C.blue)}</div>`) + cats
+    + list('補洞前五(補我缺的類別)', d.fitTop, '買到第一個人之後顯示') + list('剩下總分前五', d.totTop, '');
 }
-const draw = () => { const s = GM_getValue('dash', ''); if (s) drawDash(JSON.parse(s)); };
+const draw = () => { const s = GM_getValue('dash', ''); drawDash(s ? JSON.parse(s) : null); };
 
 if (location.hostname === 'fantasy.espn.com') {
   draw();
   GM_addValueChangeListener('dash', draw);
   let last = '', lastNom = null;
   setInterval(() => {
+    draw();   // ESPN 是單頁 app,Picks 欄晚點才出現;每秒重新對位
     const n = nominee(document);
     if (n !== lastNom) { lastNom = n; GM_setValue('nom', n); }
     let picks = parsePickItems(document);

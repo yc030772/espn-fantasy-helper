@@ -619,14 +619,18 @@ function redrawDraft(){
 
 /* 送給 ESPN 選秀室的儀表板(espn-draft-sync.user.js 轉送並畫在 Picks 上方):
    當前球員的價位 + 我在 9 類別的名次 */
-function postDash(p,left,open,bid,my){
+function postDash(p,left,open,bp,my){
   const half=Math.ceil(S.nTeams/2);
   let cats=null;
   if(rosterOf(S.slot-1).length){
     const all=[...Array(S.nTeams).keys()].map(t=>teamCats(rosterOf(t)));
     cats=CATS.map(c=>({c:LBL[c],r:1+all.filter(x=>x[c]>all[S.slot-1][c]).length}));
   }
-  window.postMessage({type:'espn-dash',d:{name:p?p.name:null,left,open,bid,
+  // 還沒被買走的人:補洞前五(依我缺的類別加權,要先有隊員)、總分前五
+  const pool=P.filter(q=>!S.picks.includes(q.id)&&total(q)!==null), w=weights(S.mine);
+  const top=(f)=>[...pool].sort((a,b)=>f(b)-f(a)).slice(0,5).map(q=>({n:q.name,v:+f(q).toFixed(1),b:bid(q)}));
+  const fitTop=S.mine.length?top(q=>fit(q,w)):null, totTop=top(total);
+  window.postMessage({type:'espn-dash',d:{fitTop,totTop,name:p?p.name:null,left,open,bid:bp,
     avg:p&&p.avg_paid?Math.round(p.avg_paid):null,espn:p?p.auction||null:null,my,cats,half,n:S.nTeams}},'*');
 }
 /* datalist 依打的字重排:整個名字字首符合 > 某個字的字首符合(例如姓) > 其他。
