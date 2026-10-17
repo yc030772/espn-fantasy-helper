@@ -224,6 +224,7 @@ fetch('data.json',{cache:'no-cache'}).then(r=>r.json()).then(d=>{
   P.forEach(p=>byId[p.id]=p);
   $('#src').innerHTML=`${P.length} 名球員 · 數據 ${P[0]?.source||'2025-26 實際'} · 排名/ADP 2026-27`;
   render();
+  if(!S.teams)fetchLeague(S.leagueId||'829293495',S.year||'2027').then(render).catch(()=>{});   // 開頁自動抓隊名
 });
 
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
@@ -797,25 +798,28 @@ function leagueView(app){
     c.append(el('h2',null,'我是哪一隊'));
     const sel=el('select');
     S.teams.forEach(t=>sel.append(new Option(`${t.name} (${t.roster.length} 人)`,t.id)));
-    sel.value=S.myTeam; sel.onchange=()=>{S.myTeam=+sel.value;save()};
+    // 選了哪隊,選秀頁的「我是第幾隊」就跟著改
+    sel.value=S.myTeam; sel.onchange=()=>{S.myTeam=+sel.value;S.slot=S.teams.findIndex(t=>t.id===S.myTeam)+1;save()};
     c.append(sel);
     st.innerHTML=`已載入 ${S.teams.length} 隊。`;
   }
   app.append(c);
 }
-async function loadLeague(){
-  const id=$('#lid').value.trim(), yr=$('#yr').value.trim(), st=$('#lst');
-  st.className='hint'; st.textContent='抓取中…';
+async function fetchLeague(id,yr){
   const url=`https://lm-api-reads.fantasy.espn.com/apis/v3/games/fba/seasons/${yr}/segments/0/leagues/${id}?view=mTeam&view=mRoster`;
-  try{
-    const r=await fetch(url,{credentials:'include'});
-    if(!r.ok)throw new Error('HTTP '+r.status+(r.status===401?' — 私人聯盟,請先登入 espn.com':''));
-    const d=await r.json();
-    S.leagueId=id; S.year=yr;
-    S.teams=d.teams.map(t=>({id:t.id,name:(t.name||`${t.location||''} ${t.nickname||''}`).trim()||('Team '+t.id),
-      roster:(t.roster?.entries||[]).map(e=>e.playerId)}));
-    S.myTeam=S.myTeam&&S.teams.some(t=>t.id===S.myTeam)?S.myTeam:S.teams[0].id;
-    save(); render();
-  }catch(e){st.className='err';st.textContent='失敗:'+e.message+'(私人聯盟需先在本瀏覽器登入 espn.com)'}
+  const r=await fetch(url);
+  if(!r.ok)throw new Error('HTTP '+r.status+(r.status===401?' — 私人聯盟,請先登入 espn.com':''));
+  const d=await r.json();
+  S.leagueId=id; S.year=yr;
+  // 依 team id 排序,選秀頁的第 t 隊 = S.teams[t]
+  S.teams=d.teams.sort((a,b)=>a.id-b.id).map(t=>({id:t.id,name:(t.name||`${t.location||''} ${t.nickname||''}`).trim()||('Team '+t.id),
+    roster:(t.roster?.entries||[]).map(e=>e.playerId)}));
+  S.nTeams=S.teams.length;
+  S.myTeam=S.teams[S.slot-1]?.id??S.teams[0].id;
+  save();
+}
+async function loadLeague(){
+  const st=$('#lst'); st.className='hint'; st.textContent='抓取中…';
+  try{ await fetchLeague($('#lid').value.trim(),$('#yr').value.trim()); render(); }catch(e){st.className='err';st.textContent='失敗:'+e.message+'(私人聯盟需先在本瀏覽器登入 espn.com)'}
 }
 </script>
