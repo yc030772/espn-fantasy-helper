@@ -605,7 +605,12 @@ function drawNom(){
   let p=byId[S.nom]; if(p&&S.picks.includes(p.id))p=null;
   const my=maxBid(S.slot-1);
   if(p){ps.value=p.name; ps.onfocus=()=>ps.select();}
-  box.append(p?el('h2',null,`${logo(p)} ${p.name} <span class="pos">建議 $${bid(p)??'-'} · 成交均價 $${p.avg_paid?Math.round(p.avg_paid):'-'} · ESPN $${p.auction||'-'} · 我最高可出 $${my}</span>`)
+  // 數字上色:綠 = 建議(合理價)、黃 = 市場均價、白 = ESPN 價值、藍 = 我還能出多少(超過建議變紅)
+  const v=(x,c)=>`<b style="color:${c}">$${x??'-'}</b>`, bp=p&&bid(p);
+  box.append(p?el('h2',null,`${logo(p)} ${p.name} <span class="pos">建議 ${v(bp,'var(--good)')}`
+      +` · 成交均價 ${v(p.avg_paid?Math.round(p.avg_paid):null,'var(--warn)')}`
+      +` · ESPN ${v(p.auction||null,'var(--text, #e6e6e6)')}`
+      +` · 我最高可出 ${v(my,bp&&bp>my?'var(--bad)':'var(--accent)')}</span>`)
     :el('h2','pos',`尚未選球員 —— 打字搜尋或點下方人名 <span class="pos">· 我最高可出 $${my}</span>`));
   box.lastChild.style.minHeight='44px';   // 空/有球員同高(窄螢幕球員資訊會折成兩行)
   const line=el('div','draftbar');
