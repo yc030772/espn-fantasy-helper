@@ -617,6 +617,18 @@ function redrawDraft(){
   const dt=$('#dlt'); dt.innerHTML=''; dt.append(tbl);
 }
 
+/* 送給 ESPN 選秀室的儀表板(espn-draft-sync.user.js 轉送並畫在 Picks 上方):
+   當前球員的價位 + 我在 9 類別的名次 */
+function postDash(p,left,open,bid,my){
+  const half=Math.ceil(S.nTeams/2);
+  let cats=null;
+  if(rosterOf(S.slot-1).length){
+    const all=[...Array(S.nTeams).keys()].map(t=>teamCats(rosterOf(t)));
+    cats=CATS.map(c=>({c:LBL[c],r:1+all.filter(x=>x[c]>all[S.slot-1][c]).length}));
+  }
+  window.postMessage({type:'espn-dash',d:{name:p?p.name:null,left,open,bid,
+    avg:p&&p.avg_paid?Math.round(p.avg_paid):null,espn:p?p.auction||null:null,my,cats,half,n:S.nTeams}},'*');
+}
 /* datalist 依打的字重排:整個名字字首符合 > 某個字的字首符合(例如姓) > 其他。
    瀏覽器照 option 的順序顯示,所以直接搬動 option。 */
 function rankList(dl,v){
@@ -680,6 +692,7 @@ function drawNom(){
   const no=el('button','act','取消'); no.onclick=()=>{S.nom=null;S.cur=0;save();drawNom()};
   line.append(el('span','pos','球員 '),ps,pl,el('span','pos',' 目前喊價 $'),pr,el('span','pos',' 得標 '),sel,dl,' ',ok,no);
   box.append(line);
+  postDash(p,left,open,bp,my);
   if(!p){[pr,sel,ok,no].forEach(x=>x.disabled=true);return}
   pr.focus({preventScroll:true});   // 不捲動畫面
 }
