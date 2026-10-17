@@ -253,7 +253,15 @@ function applyEspnPicks(list){
 }
 const syncText=()=>SYNC.at?`ESPN 同步 ${SYNC.n} 筆 · ${SYNC.at.toLocaleTimeString()}`
   +(SYNC.miss.length?` · <span style="color:var(--bad)" title="${SYNC.miss.join('\n')}">對不到 ${SYNC.miss.length} 筆</span>`:''):'ESPN 未同步';
-window.addEventListener('message',e=>{if(e.data&&e.data.type==='espn-picks')applyEspnPicks(e.data.picks)});
+// ESPN 換人競標 -> 出價面板自動切到那個人
+function applyEspnNom(name){
+  const p=name&&P.find(q=>normName(q.name)===normName(name));
+  if(!p||S.picks.includes(p.id)||S.nom===p.id)return;
+  S.nom=p.id;S.cur=0;save();drawNom();redrawDraft();
+}
+window.addEventListener('message',e=>{if(!e.data)return;
+  if(e.data.type==='espn-picks')applyEspnPicks(e.data.picks);
+  if(e.data.type==='espn-nom')applyEspnNom(e.data.name)});
 
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
   tab=b.dataset.t;

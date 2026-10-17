@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ESPN 拍賣選秀 → Fantasy 助手
 // @namespace    fantasy-helper
-// @version      1.1
+// @version      1.2
 // @description  讀 ESPN 選秀室右側 Picks 清單(誰用多少錢買走誰),即時同步到本機的 Fantasy 助手
 // @match        https://fantasy.espn.com/basketball/draft*
 // @match        http://localhost:*/*
@@ -36,9 +36,19 @@ function parsePicks(text) {
   return out;
 }
 
+// 正在競標的球員:.player-selected__player-info-container 裡的人名;
+// 找不到(ESPN 改版)就退回「不在 Picks 清單裡的第一個 .playerinfo__playername」
+function nominee(root) {
+  const el = root.querySelector('.player-selected__player-info-container .playerinfo__playername')
+    || [...root.querySelectorAll('.playerinfo__playername')].find(e => !e.closest('li.pick-message__container'));
+  return el ? el.textContent.trim() : '';
+}
+
 if (location.hostname === 'fantasy.espn.com') {
-  let last = '';
+  let last = '', lastNom = null;
   setInterval(() => {
+    const n = nominee(document);
+    if (n !== lastNom) { lastNom = n; GM_setValue('nom', n); }
     let picks = parsePickItems(document);
     if (!picks.length) picks = parsePicks(document.body.innerText);
     const s = JSON.stringify(picks);
@@ -49,4 +59,5 @@ if (location.hostname === 'fantasy.espn.com') {
   // index.html 載入資料後才會接訊息,開頁時多送幾次
   [1000, 3000, 6000].forEach(ms => setTimeout(() => send(GM_getValue('picks', '')), ms));
   GM_addValueChangeListener('picks', (k, o, n) => send(n));
+  GM_addValueChangeListener('nom', (k, o, n) => window.postMessage({ type: 'espn-nom', name: n }, '*'));
 }
