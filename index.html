@@ -607,7 +607,9 @@ function drawNom(){
   if(p){ps.value=p.name; ps.onfocus=()=>ps.select();}
   // 數字上色:綠 = 建議(合理價)、黃 = 市場均價、白 = ESPN 價值、藍 = 我還能出多少(超過建議變紅)
   const v=(x,c)=>`<b style="color:${c}">$${x??'-'}</b>`, bp=p&&bid(p);
-  box.append(p?el('h2',null,`${logo(p)} ${p.name} <span class="pos">建議 ${v(bp,'var(--good)')}`
+  // 剩餘名次:還沒被買走、有數據的人裡,依總分排第幾。便宜但名次很後面 = 不值得
+  const tp=p&&total(p), left=p&&tp!==null?1+P.filter(q=>!S.picks.includes(q.id)&&total(q)!==null&&total(q)>tp).length:null;
+  box.append(p?el('h2',null,`${logo(p)} ${p.name} <span class="pos">剩餘第 <b style="color:var(--text, #e6e6e6)">${left??'–'}</b> 名 · 建議 ${v(bp,'var(--good)')}`
       +` · 成交均價 ${v(p.avg_paid?Math.round(p.avg_paid):null,'var(--warn)')}`
       +` · ESPN ${v(p.auction||null,'var(--text, #e6e6e6)')}`
       +` · 我最高可出 ${v(my,bp&&bp>my?'var(--bad)':'var(--accent)')}</span>`)
