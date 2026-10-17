@@ -609,11 +609,14 @@ function drawNom(){
   const v=(x,c)=>`<b style="color:${c}">$${x??'-'}</b>`, bp=p&&bid(p);
   // 剩餘名次:還沒被買走、有數據的人裡,依總分排第幾。便宜但名次很後面 = 不值得
   const tp=p&&total(p), left=p&&tp!==null?1+P.filter(q=>!S.picks.includes(q.id)&&total(q)!==null&&total(q)>tp).length:null;
-  box.append(p?el('h2',null,`${logo(p)} ${p.name} <span class="pos">剩餘第 <b style="color:var(--text, #e6e6e6)">${left??'–'}</b> 名 · 建議 ${v(bp,'var(--good)')}`
+  // 場上剩幾個空位;名次在前一半 = 綠(搶手),在空位數內 = 黃,超過空位數 = 紅(大概沒人要,會流到 $1)
+  const open=S.nTeams*S.rsize-S.picks.length;
+  const lc=left===null?'var(--dim)':left<=open/2?'var(--good)':left<=open?'var(--warn)':'var(--bad)';
+  box.append(p?el('h2',null,`${logo(p)} ${p.name} <span class="pos">剩餘第 <b style="color:${lc}">${left??'–'}</b> 名 / 場上剩 <b>${open}</b> 空位 · 建議 ${v(bp,'var(--good)')}`
       +` · 成交均價 ${v(p.avg_paid?Math.round(p.avg_paid):null,'var(--warn)')}`
       +` · ESPN ${v(p.auction||null,'var(--text, #e6e6e6)')}`
       +` · 我最高可出 ${v(my,bp&&bp>my?'var(--bad)':'var(--accent)')}</span>`)
-    :el('h2','pos',`尚未選球員 —— 打字搜尋或點下方人名 <span class="pos">· 我最高可出 $${my}</span>`));
+    :el('h2','pos',`尚未選球員 —— 打字搜尋或點下方人名 <span class="pos">· 場上剩 ${S.nTeams*S.rsize-S.picks.length} 空位 · 我最高可出 $${my}</span>`));
   box.lastChild.style.minHeight='66px';   // 空/有球員同高(窄螢幕球員資訊會折成兩行)
   box.lastChild.style.fontSize='19.5px';  // 一般 h2 的 1.5 倍,出價時一眼看到價格
   box.lastChild.querySelectorAll('.pos').forEach(x=>x.style.fontSize='16.5px');   // 價格那串也放大 1.5 倍(.pos 預設 11px)
