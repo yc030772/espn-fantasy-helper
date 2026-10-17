@@ -143,7 +143,7 @@ S.w=S.w||{...PRESETS['均衡(建議)']}; S.preset=S.preset||'均衡(建議)';
 let P=[], byId={}, T={}, tab='draft';
 const teamOf=i=>S.owner[i];
 const rosterOf=t=>S.picks.filter((_,i)=>teamOf(i)===t);
-const teamName=t=>t===S.slot-1?'我':(S.teams&&S.teams[t]?S.teams[t].name:`Team ${t+1}`);
+const teamName=t=>t===S.slot-1?'me':(S.teams&&S.teams[t]?S.teams[t].name:`Team ${t+1}`);
 /* --- 拍賣 --- */
 const spent=t=>S.price.reduce((s,x,i)=>s+(S.owner[i]===t?x:0),0);
 const moneyLeft=t=>S.budget-spent(t);
@@ -374,18 +374,20 @@ function draftRest(app){
   app.append(nom); drawNom();
 
   /* --- 搜尋列 --- */
-  const bar=el('div','card',''); bar.style.marginBottom='12px';
+  // 搜尋列放在「球員排名」標題下面;redrawDraft 只重畫標題與表格,輸入框不會失焦
+  const bar=el('div'); bar.style.margin='0 0 10px';
   bar.append(el('span',null,'搜尋 '),Object.assign(document.createElement('input'),
     {type:'text',id:'q',placeholder:'球員名',oninput:redrawDraft}));
   const sel=el('select'); sel.id='pf';
   ['全部','PG','SG','SF','PF','C'].forEach(o=>sel.append(new Option(o,o)));
   sel.onchange=redrawDraft; bar.append(' ',sel,' ');
   bar.append(el('span','hint','點任一欄位標題排序,再點一次換升/降冪。ESPN 排序 = ESPN 類別(ROTO)排名 · 回測 312 人:ESPN ρ=.906、我們 ρ=.769'));
-  app.append(bar);
 
   const strip=el('div','card'); strip.id='stand'; strip.style.marginBottom='12px';
   app.append(strip);
-  const left=el('div','card'); left.id='dl'; app.append(left);
+  const left=el('div','card'); left.id='dl';
+  const dh=el('h2'); dh.id='dlh'; const dt=el('div'); dt.id='dlt';
+  left.append(dh,bar,dt); app.append(left);
   drawStandings();
   redrawDraft();
   app.append(standingsTable());
@@ -562,15 +564,26 @@ function redrawDraft(){
     td.onclick=()=>{S.nom=shown[i].id;S.cur=0;save();drawNom();redrawDraft();$('#nom').scrollIntoView({behavior:'smooth'})};
   });
   const cn=[...fixedCols(),...cols].find(c=>c.k===S.dsort.k);
-  const dl=$('#dl'); dl.innerHTML='';
-  dl.append(el('h2',null,`球員排名(依${cn?cn.h:'?'} ${S.dsort.dir<0?'降冪':'升冪'})`),tbl);
+  $('#dlh').innerHTML=`球員排名(依${cn?cn.h:'?'} ${S.dsort.dir<0?'降冪':'升冪'})`;
+  const dt=$('#dlt'); dt.innerHTML=''; dt.append(tbl);
 }
 
 /* --- 出價面板:點表格裡的人名 -> 在這裡填目前喊價、選得標隊伍、成交 --- */
 function drawNom(){
   const box=$('#nom'); if(!box)return; box.innerHTML='';
+  // 球員:可打字,datalist 跳出還沒被買走的人(跟得標隊伍同一種搜尋)
+  const ps=Object.assign(document.createElement('input'),{type:'text',id:'nomp',placeholder:'球員(打字搜尋)'});
+  ps.setAttribute('list','plist'); ps.style.width='220px';
+  const pl=el('datalist'); pl.id='plist';
+  P.filter(p=>!S.picks.includes(p.id)).forEach(p=>{const o=new Option(p.name);o.label=`建議 $${bid(p)??'-'}`;pl.append(o)});
+  ps.oninput=()=>{const v=ps.value.trim().toLowerCase();
+    const q=P.find(p=>!S.picks.includes(p.id)&&p.name.toLowerCase()===v);
+    if(q){S.nom=q.id;S.cur=0;save();drawNom();redrawDraft()}};
   const p=byId[S.nom];
-  if(!p||S.picks.includes(p.id)){box.append(el('p','hint','點下方表格的<b>球員名字</b>開始登記出價。'));return}
+  if(!p||S.picks.includes(p.id)){
+    const l=el('div','draftbar'); l.append(el('span','pos','球員 '),ps,pl,el('span','hint',' 或點下方表格的球員名字'));
+    box.append(l); ps.focus(); return}
+  ps.value=p.name; ps.onfocus=()=>ps.select();
   const b=bid(p), my=maxBid(S.slot-1);
   box.append(el('h2',null,`${logo(p)} ${p.name} <span class="pos">建議 $${b??'-'} · ESPN $${p.auction||'-'} · 我最高可出 $${my}</span>`));
   const line=el('div','draftbar');
@@ -585,14 +598,7 @@ function drawNom(){
     const names=[...Array(S.nTeams).keys()].map(t=>[t,teamName(t).toLowerCase()]);
     const hit=names.find(x=>x[1]===v)||names.filter(x=>x[1].includes(v)).reduce((a,x,_,all)=>all.length===1?x:a,null);
     return hit?hit[0]:-1};
-  // 可再加 = min(建議價, 我最高可出) − 目前喊價
-  const room=el('span','clock');
-  const upd=()=>{
-    const x=S.cur, r=b===null||!x?null:Math.min(b,my)-x;
-    room.innerHTML=r===null?'輸入喊價看還能加多少':r>=0?`還可再加 <b style="color:var(--good)">$${r}</b>`
-      :`<b style="color:var(--bad)">溢價 $${-r}</b>`;
-  };
-  pr.oninput=()=>{S.cur=+pr.value||0;save();upd()};
+  pr.oninput=()=>{S.cur=+pr.value||0;save()};
   const ok=el('button','act pick','成交');
   ok.onclick=()=>{
     const t=findTeam(sel.value), x=+pr.value;
@@ -602,8 +608,8 @@ function drawNom(){
     S.picks.push(p.id);S.owner.push(t);S.price.push(x);S.cur=0;S.nom=null;save();render();
   };
   const no=el('button','act','取消'); no.onclick=()=>{S.nom=null;S.cur=0;save();drawNom()};
-  line.append(el('span','pos','目前喊價 $'),pr,' ',room,el('span','pos',' 得標 '),sel,dl,' ',ok,no);
-  box.append(line); upd();
+  line.append(el('span','pos','球員 '),ps,pl,el('span','pos',' 目前喊價 $'),pr,el('span','pos',' 得標 '),sel,dl,' ',ok,no);
+  box.append(line);
   pr.focus();
 }
 
