@@ -229,6 +229,32 @@ fetch('data.json',{cache:'no-cache'}).then(r=>r.json()).then(d=>{
   if(!S.teams)fetchLeague(S.leagueId||'829293495',S.year||'2027').then(render).catch(()=>{});   // 開頁自動抓隊名
 });
 
+/* ---------- ESPN 選秀室同步(espn-draft-sync.user.js 送來的 Picks 清單) ----------
+   只新增/更新,不刪除:ESPN 清單沒捲到的舊成交不會被誤刪。 */
+const normName=n=>n.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
+  .replace(/[.'’]/g,'').replace(/\b(jr|sr|ii|iii|iv)\b/g,'').replace(/\s+/g,' ').trim();
+let SYNC={n:0,at:null,miss:[]};
+function applyEspnPicks(list){
+  if(!P.length)return;
+  const byName={}; P.forEach(p=>byName[normName(p.name)]=p);
+  const teamIdx=t=>{t=t.replace(/(\.\.\.|…)$/,'').trim().toLowerCase();   // 太長的隊名 ESPN 會截斷
+    const i=[...Array(S.nTeams).keys()].find(i=>realName(i).toLowerCase()===t);
+    return i!==undefined?i:[...Array(S.nTeams).keys()].find(i=>realName(i).toLowerCase().startsWith(t))??-1};
+  let changed=false; const miss=[];
+  list.forEach(x=>{
+    const p=(x.id&&byId[x.id])||byName[normName(x.name)], t=teamIdx(x.team);   // 有 ESPN id 先用 id
+    if(!p||t<0){miss.push(`${x.name} (${x.team})`);return}
+    const i=S.picks.indexOf(p.id);
+    if(i<0){S.picks.push(p.id);S.owner.push(t);S.price.push(x.price);changed=true}
+    else if(S.owner[i]!==t||S.price[i]!==x.price){S.owner[i]=t;S.price[i]=x.price;changed=true}
+  });
+  SYNC={n:list.length,at:new Date(),miss};
+  if(changed){save();render()}else{const e=$('#sync');if(e)e.innerHTML=syncText()}
+}
+const syncText=()=>SYNC.at?`ESPN 同步 ${SYNC.n} 筆 · ${SYNC.at.toLocaleTimeString()}`
+  +(SYNC.miss.length?` · <span style="color:var(--bad)" title="${SYNC.miss.join('\n')}">對不到 ${SYNC.miss.length} 筆</span>`:''):'ESPN 未同步';
+window.addEventListener('message',e=>{if(e.data&&e.data.type==='espn-picks')applyEspnPicks(e.data.picks)});
+
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
   tab=b.dataset.t;
   document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));
@@ -379,6 +405,7 @@ function draftAuctionBar(line,mk){
   line.append(mk('最後 3 格各保留 $',S.reserveLast,1,20,v=>{S.reserveLast=v;save();render()}));
   line.append(el('span','clock me',`我剩 <b>$${moneyLeft(S.slot-1)}</b> · 最高可出 <b>$${maxBid(S.slot-1)}</b>`
     +` · 通膨 ×${AV.infl.toFixed(2)}`));
+  const sy=el('span','hint',syncText()); sy.id='sync'; line.append(sy);
 }
 function draftRest(app){
   const nom=el('div','card'); nom.id='nom'; nom.style.marginBottom='12px';

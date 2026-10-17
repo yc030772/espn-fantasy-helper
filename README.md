@@ -12,6 +12,17 @@
 - **總分表**:451 名球員的加權總分,每一類別的貢獻分開列,可排序、可下載 CSV。
 - **FA**:排除所有已被選走的球員,依你隊上最弱的類別加權排序,並列出可以 drop 的人。
 
+## ESPN 選秀室自動同步(Tampermonkey)
+
+`espn-draft-sync.user.js` 讀 ESPN 選秀室右側 **Picks** 清單(誰用多少錢買走誰),即時寫進助手的成交紀錄。
+
+1. Chrome 裝 Tampermonkey,新增腳本,貼上 `espn-draft-sync.user.js` 全文存檔
+2. 本機開助手:`python3 -m http.server 8899`,打開 `http://localhost:8899`
+3. 另一個分頁開 ESPN 選秀室(任何 `fantasy.espn.com/basketball/draft…` 網址都會生效)
+4. 助手的拍賣設定列會顯示「ESPN 同步 N 筆」;滑過紅字「對不到」可看哪幾筆人名/隊名沒配對到
+
+只新增、更新,不會刪除成交紀錄。目前只同步成交,不抓正在競標的球員。
+
 ## 為什麼權重不是全部 1.0
 
 各項數據尺度不同(PTS 25 分 vs BLK 1.2 顆),所以先做 **z-score 標準化** — 換算成「離聯盟平均幾個標準差」,這樣才能相加。
