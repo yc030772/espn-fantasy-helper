@@ -612,7 +612,9 @@ function drawNom(){
       +` · ESPN ${v(p.auction||null,'var(--text, #e6e6e6)')}`
       +` · 我最高可出 ${v(my,bp&&bp>my?'var(--bad)':'var(--accent)')}</span>`)
     :el('h2','pos',`尚未選球員 —— 打字搜尋或點下方人名 <span class="pos">· 我最高可出 $${my}</span>`));
-  box.lastChild.style.minHeight='44px';   // 空/有球員同高(窄螢幕球員資訊會折成兩行)
+  box.lastChild.style.minHeight='66px';   // 空/有球員同高(窄螢幕球員資訊會折成兩行)
+  box.lastChild.style.fontSize='19.5px';  // 一般 h2 的 1.5 倍,出價時一眼看到價格
+  box.lastChild.querySelectorAll('.pos').forEach(x=>x.style.fontSize='16.5px');   // 價格那串也放大 1.5 倍(.pos 預設 11px)
   const line=el('div','draftbar');
   const pr=Object.assign(document.createElement('input'),{type:'number',id:'price',min:1,placeholder:'目前喊價',value:S.cur||''});
   pr.style.width='90px';
