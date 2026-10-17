@@ -219,10 +219,10 @@ const heat=v=>{const t=Math.max(-1,Math.min(1,v/8));
   return t>0?`hsl(${152-t*8} 65% ${52+t*14}%)`:`hsl(${6} ${45+(-t)*30}% ${58+t*10}%)`};
 const hot=(v,d=1)=>v===null?'<span class="pos">–</span>':`<b style="color:${heat(v)}">${v.toFixed(d)}</b>`;
 
-fetch('data.json').then(r=>r.json()).then(d=>{
+fetch('data.json',{cache:'no-cache'}).then(r=>r.json()).then(d=>{
   P=d.players||d; T=d.teams||{};                       // 舊格式(純陣列)也還能開
   P.forEach(p=>byId[p.id]=p);
-  $('#src').innerHTML=`${P.length} 名球員 · 數據 2025-26 實際 · 排名/ADP 2026-27`;
+  $('#src').innerHTML=`${P.length} 名球員 · 數據 ${P[0]?.source||'2025-26 實際'} · 排名/ADP 2026-27`;
   render();
 });
 
@@ -412,7 +412,38 @@ function draftRest(app){
   drawStandings();
   redrawDraft();
   app.append(standingsTable());
+  if(S.auction)app.append(saleLog());
   app.append(boardView());
+}
+/* --- 拍賣成交紀錄:誰被哪隊用多少買走,可直接改隊伍/價格或刪除 --- */
+function saleLog(){
+  const box=el('div','card'); box.style.marginTop='12px';
+  box.append(el('h2',null,`成交紀錄 (${S.picks.length} 筆 · 共 $${S.price.reduce((a,b)=>a+b,0)})`));
+  if(!S.picks.length){box.append(el('p','hint','上方選「得標」隊伍、填價格,在球員列按「成交」就會記在這裡。'));return box}
+  const wrap=el('div','scroll'), tb=el('table');
+  tb.innerHTML='<thead><tr><th class="l">#</th><th class="l">球員</th><th class="l">得標隊伍</th><th>價格</th><th>建議</th><th></th></tr></thead>';
+  const body=el('tbody');
+  S.picks.map((id,i)=>i).reverse().forEach(i=>{   // 最新的在最上面
+    const p=byId[S.picks[i]], tr=el('tr'); if(!p)return;
+    if(S.owner[i]===S.slot-1)tr.classList.add('mine');
+    tr.innerHTML=`<td class="l">${i+1}</td><td class="l name">${logo(p)}<span>${p.name}</span></td>`;
+    const ts=el('td','l'), sel=el('select');
+    for(let t=0;t<S.nTeams;t++)sel.append(new Option(teamName(t),t));
+    sel.value=S.owner[i]; sel.onchange=()=>{S.owner[i]=+sel.value;save();render()};
+    ts.append(sel);
+    const ps=el('td'), pi=Object.assign(document.createElement('input'),{type:'number',min:1,value:S.price[i]});
+    pi.style.width='64px'; pi.onchange=()=>{S.price[i]=Math.max(1,+pi.value||1);save();render()};
+    ps.append(pi);
+    const b=AV.v[p.id]?Math.round(AV.v[p.id]):null;
+    const bt=el('td',null,b?`<span style="color:${S.price[i]>b?'var(--bad)':'var(--good)'}">$${b}</span>`:'-');
+    const dt=el('td'), del=el('button','act','刪除');
+    del.onclick=()=>{if(confirm(`刪除 ${p.name} 這筆成交?`)){[S.picks,S.owner,S.price].forEach(a=>a.splice(i,1));save();render()}};
+    dt.append(del);
+    tr.append(ts,ps,bt,dt); body.append(tr);
+  });
+  tb.append(body); wrap.append(tb); box.append(wrap);
+  box.append(el('p','hint','「建議」= 未計通膨的公平價;紅色 = 買貴了。'));
+  return box;
 }
 
 /* --- 9 類別相對排名:我 vs 其他 11 隊 --- */
