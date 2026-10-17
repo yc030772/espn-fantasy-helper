@@ -563,7 +563,8 @@ function redrawDraft(){
   tbl.querySelectorAll('tbody tr').forEach((tr,i)=>{
     const td=tr.querySelector('td.name'); td.style.cursor='pointer'; td.title='點我登記出價';
     if(shown[i].id===S.nom)tr.style.outline='2px solid var(--accent)';
-    td.onclick=()=>{S.nom=shown[i].id;S.cur=0;save();drawNom();redrawDraft()};
+    td.onclick=()=>{if(getSelection().toString())return;   // 正在選取文字(要複製人名)就不開面板
+      S.nom=shown[i].id;S.cur=0;save();drawNom();redrawDraft()};
   });
   const cn=[...fixedCols(),...cols].find(c=>c.k===S.dsort.k);
   $('#dlh').innerHTML=`球員排名(依${cn?cn.h:'?'} ${S.dsort.dir<0?'降冪':'升冪'})`;
