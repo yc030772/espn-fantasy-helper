@@ -136,6 +136,8 @@ def build(season=2026, rank_season=2027, min_gp=20, source="auto"):
              "team": p.get("proTeamId"), "injury": p.get("injuryStatus", ""),
              "espn_rank": rk, "std_rank": d.get("STANDARD", {}).get("rank"),
              "auction": rt.get("auctionValue") or 0, "adp": adp,
+             # ESPN 今年實際拍賣選秀的平均成交價(市場行情,含 points 聯盟)
+             "avg_paid": round((p.get("ownership") or {}).get("auctionValueAverage") or 0, 1),
              "GP": s["GP"] if s else 0, "MIN": s["MIN"] if s else 0}
         for k in STATS:
             r[k] = s[k] if s else 0.0

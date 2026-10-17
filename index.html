@@ -552,7 +552,9 @@ function redrawDraft(){
     const my=maxBid(S.slot-1);
     cols.unshift({h:'建議 $',k:'bid',desc:1,v:p=>bid(p),f:p=>{const b=bid(p);
       return b===null?'-':`<b style="color:${b>my?'var(--bad)':'var(--good)'}" title="${b>my?'超過你最高可出的 $'+my:''}">$${b}</b>`}});
-    // 可再加 = 建議價 − 目前喊價。≥0 還不算溢價;<0 = 已溢價多少
+    // ESPN 今年實際拍賣的平均成交價 = 市場行情。比建議價高很多 = 大家愛喊;低很多 = 可能撿便宜
+    cols.splice(1,0,{h:'成交均價',k:'avg_paid',desc:1,v:p=>p.avg_paid||null,f:p=>{const a=p.avg_paid,b=bid(p);
+      return a?`<span style="color:${b&&a>b+5?'var(--bad)':b&&a<b-5?'var(--good)':'inherit'}">$${Math.round(a)}</span>`:'-'}});
   }
   pool=sortList(pool,cols,S.dsort);
   const shown=pool.slice(0,250);
@@ -575,7 +577,7 @@ function drawNom(){
   const ps=Object.assign(document.createElement('input'),{type:'text',id:'nomp',placeholder:'球員(打字搜尋)'});
   ps.setAttribute('list','plist'); ps.style.width='220px';
   const pl=el('datalist'); pl.id='plist';
-  P.filter(p=>!S.picks.includes(p.id)).forEach(p=>{const o=new Option(p.name);o.label=`建議 $${bid(p)??'-'}`;pl.append(o)});
+  P.filter(p=>!S.picks.includes(p.id)).forEach(p=>{const o=new Option(p.name);o.label=`建議 $${bid(p)??'-'} · 均價 $${p.avg_paid?Math.round(p.avg_paid):'-'}`;pl.append(o)});
   ps.oninput=()=>{const v=ps.value.trim().toLowerCase();
     const q=P.find(p=>!S.picks.includes(p.id)&&p.name.toLowerCase()===v);
     if(q){S.nom=q.id;S.cur=0;save();drawNom();redrawDraft()}};
@@ -583,7 +585,7 @@ function drawNom(){
   let p=byId[S.nom]; if(p&&S.picks.includes(p.id))p=null;
   const my=maxBid(S.slot-1);
   if(p){ps.value=p.name; ps.onfocus=()=>ps.select();}
-  box.append(p?el('h2',null,`${logo(p)} ${p.name} <span class="pos">建議 $${bid(p)??'-'} · ESPN $${p.auction||'-'} · 我最高可出 $${my}</span>`)
+  box.append(p?el('h2',null,`${logo(p)} ${p.name} <span class="pos">建議 $${bid(p)??'-'} · 成交均價 $${p.avg_paid?Math.round(p.avg_paid):'-'} · ESPN $${p.auction||'-'} · 我最高可出 $${my}</span>`)
     :el('h2','pos',`尚未選球員 —— 打字搜尋或點下方人名 <span class="pos">· 我最高可出 $${my}</span>`));
   box.lastChild.style.minHeight='44px';   // 空/有球員同高(窄螢幕球員資訊會折成兩行)
   const line=el('div','draftbar');
