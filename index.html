@@ -271,6 +271,20 @@ document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
 
 /* ---------- 陣容 / 分類強弱 ---------- */
 const teamCats=ids=>{const t={};CATS.forEach(c=>t[c]=ids.reduce((s,i)=>s+(byId[i]?catZ(byId[i],c):0),0));return t};
+/* 預估最終陣容 = 已選 + 空位用「池子平均」補滿,這樣人數不同的隊伍才能公平比類別名次。
+   池子 = 還沒被買走、有數據的人依總分取前 N 名,N = 全聯盟剩下的空位數(這些人最後會被選走)。
+   每隊空位都用同一個平均補,差別只來自已經選到的人。 */
+function poolAvg(){
+  const n=Math.max(0,S.nTeams*S.rsize-S.picks.length);
+  const top=P.filter(p=>!S.picks.includes(p.id)&&!noData(p)).sort((a,b)=>total(b)-total(a)).slice(0,n);
+  const a={}; CATS.forEach(c=>a[c]=top.length?top.reduce((s,p)=>s+catZ(p,c),0)/top.length:0);
+  return a;
+}
+function projCats(t,avg=poolAvg()){
+  const r=rosterOf(t), c=teamCats(r), open=Math.max(0,S.rsize-r.length);
+  CATS.forEach(k=>c[k]+=open*avg[k]);
+  return c;
+}
 const teamW=ids=>{const t=teamCats(ids);CATS.forEach(c=>t[c]*=S.w[c]);return t};
 // 弱項加權:我缺的類別,該類別的球員對我更值錢
 function weights(ids){
@@ -478,7 +492,7 @@ function drawStandings(){
     box.append(el('p','hint','開始選人之後,這裡會顯示你在每個類別排第幾(共 '+S.nTeams+' 隊),以及最弱的三項。'));
     return;
   }
-  const all=[...Array(S.nTeams).keys()].map(t=>({t,cat:teamCats(rosterOf(t))}));
+  const avg=poolAvg(), all=[...Array(S.nTeams).keys()].map(t=>({t,cat:projCats(t,avg)}));
   const me=all[S.slot-1], half=Math.ceil(S.nTeams/2);
   const strip=el('div','rstrip');
   let wins=0; const ranked=[];
@@ -512,7 +526,7 @@ function standingsTable(){
     box.append(el('p','hint','開始選人之後,這裡會列出全部 '+S.nTeams+' 隊在 9 個類別的數字與名次。'));
     return box;
   }
-  const all=[...Array(S.nTeams).keys()].map(t=>({t,cat:teamCats(rosterOf(t)),n:rosterOf(t).length,
+  const avg=poolAvg(), all=[...Array(S.nTeams).keys()].map(t=>({t,cat:projCats(t,avg),n:rosterOf(t).length,
     unk:rosterOf(t).filter(i=>byId[i]&&noData(byId[i])).length}));
   // 每個類別的名次
   const rk={};
@@ -545,7 +559,7 @@ function standingsTable(){
   const totUnk=all.reduce((s,x)=>s+x.unk,0);
   if(totUnk)box.append(el('p','hint',
     `⚠ 已選走的人裡有 <b>${totUnk}</b> 位沒有去年數據(新秀等),類別統計未計入 —— 人數欄的 <code>+N?</code> 就是。`));
-  box.append(el('p','hint','數字 = 該隊該類別的 z 總和(已套用你的權重),右上小字 = 名次。'
+  box.append(el('p','hint','數字 = 預估最終陣容(已選 + 空位用剩下好球員的平均補滿)該類別的 z 總和,右上小字 = 名次。'
     +`綠 = 前 3、黃 = 前段、紅 = 後段。「前段」= 排在前 ${half} 名的類別數,H2H 需要 5 類。`));
   return box;
 }
@@ -623,7 +637,7 @@ function postDash(p,left,open,bp,my){
   const half=Math.ceil(S.nTeams/2);
   let cats=null;
   if(rosterOf(S.slot-1).length){
-    const all=[...Array(S.nTeams).keys()].map(t=>teamCats(rosterOf(t)));
+    const avg=poolAvg(), all=[...Array(S.nTeams).keys()].map(t=>projCats(t,avg));
     cats=CATS.map(c=>({c:LBL[c],r:1+all.filter(x=>x[c]>all[S.slot-1][c]).length}));
   }
   // 還沒被買走的人:補洞前五(依我缺的類別加權,要先有隊員)、總分前五
