@@ -133,7 +133,7 @@ S.owner=S.owner||[]; S.price=S.price||[];
 // 舊版蛇型選秀存的 picks 沒有得標隊伍/價格,對不上就清掉
 if(S.owner.length!==S.picks.length||S.price.length!==S.picks.length){S.picks=[];S.owner=[];S.price=[]}
 delete S.auction;
-S.budget=S.budget||200; S.reserve=S.reserve||2; S.rsize=S.rsize||13; S.bidder=S.bidder||0;
+S.budget=S.budget||200; S.reserve=S.reserve||2; S.reserveLast=S.reserveLast||3; S.rsize=S.rsize||13; S.bidder=S.bidder||0;
 S.dsort=S.dsort||{k:'total',dir:-1};  // 選秀頁排序:預設總分降冪
 S.fsort=S.fsort||{k:'total',dir:-1};  // FA 頁
 S.asort=S.asort||{k:'total',dir:-1};  // 總分表
@@ -148,9 +148,11 @@ const teamName=t=>t===S.slot-1?'me':(S.teams&&S.teams[t]?S.teams[t].name:`Team $
 const spent=t=>S.price.reduce((s,x,i)=>s+(S.owner[i]===t?x:0),0);
 const moneyLeft=t=>S.budget-spent(t);
 // 還能出的最高價 = 剩餘預算 − 其他空位的保留金。別隊照 ESPN 規則每格 $1;
-// 我自己每格保留 S.reserve(預設 $2),尾盤才能用 $2 搶下別人只出得起 $1 的人
-const maxBid=t=>{const open=S.rsize-rosterOf(t).length,r=t===S.slot-1?S.reserve:1;
-  return open>0?Math.max(0,moneyLeft(t)-(open-1)*r):0};
+// 我自己每格保留 S.reserve(預設 $2),最後 3 格各保留 S.reserveLast(預設 $3),
+// 尾盤才能用 $2~3 搶下別人只出得起 $1 的人
+const reserveFor=(t,n)=>t===S.slot-1?Math.min(n,3)*S.reserveLast+Math.max(0,n-3)*S.reserve:n;
+const maxBid=t=>{const open=S.rsize-rosterOf(t).length;
+  return open>0?Math.max(0,moneyLeft(t)-reserveFor(t,open-1)):0};
 /* 建議出價:
    1. 我方價值 = 每人 $1 底價 + 依「總分超出替補水準」分配剩下的錢。
       替補水準 = 第 隊數×人數 名的總分(這之後的人會是 $1 或沒人要)。
@@ -366,6 +368,7 @@ function draftAuctionBar(line,mk){
   line.append(mk('預算',S.budget,1,9999,v=>{S.budget=v;save();render()}));
   line.append(mk('每隊人數',S.rsize,1,30,v=>{S.rsize=v;save();render()}));
   line.append(mk('我每格保留 $',S.reserve,1,20,v=>{S.reserve=v;save();render()}));
+  line.append(mk('最後 3 格各保留 $',S.reserveLast,1,20,v=>{S.reserveLast=v;save();render()}));
   line.append(el('span','clock me',`我剩 <b>$${moneyLeft(S.slot-1)}</b> · 最高可出 <b>$${maxBid(S.slot-1)}</b>`
     +` · 通膨 ×${AV.infl.toFixed(2)}`));
 }
