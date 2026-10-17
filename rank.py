@@ -126,14 +126,16 @@ def build(season=2026, rank_season=2027, min_gp=20, source="auto"):
     for p in master:
         d = p.get("draftRanksByRankType") or {}
         adp = (p.get("ownership") or {}).get("averageDraftPosition")
-        rk = d.get("STANDARD", {}).get("rank")
+        # 9-cat 聯盟要用 ROTO(類別)排名與拍賣價;STANDARD 是 points league 的。ROTO 沒有才退回 STANDARD
+        rt = d.get("ROTO") or d.get("STANDARD") or {}
+        rk = rt.get("rank")
         if not rk and not (adp and adp < 140):
             continue                              # ESPN 完全沒排名的人不放進來
         s = stats.get(p["id"])
         r = {"name": p["fullName"], "id": p["id"], "pos": POS.get(p.get("defaultPositionId"), "?"),
              "team": p.get("proTeamId"), "injury": p.get("injuryStatus", ""),
-             "espn_rank": rk, "roto_rank": d.get("ROTO", {}).get("rank"),
-             "auction": d.get("STANDARD", {}).get("auctionValue") or 0, "adp": adp,
+             "espn_rank": rk, "std_rank": d.get("STANDARD", {}).get("rank"),
+             "auction": rt.get("auctionValue") or 0, "adp": adp,
              "GP": s["GP"] if s else 0, "MIN": s["MIN"] if s else 0}
         for k in STATS:
             r[k] = s[k] if s else 0.0
