@@ -354,7 +354,12 @@ function draftView(app){
     g.append(i); return g;
   };
   line.append(mk('隊伍數',S.nTeams,2,20,v=>{S.nTeams=v;S.slot=Math.min(S.slot,v);save();render()}));
-  line.append(mk('我是第幾隊',S.slot,1,S.nTeams,v=>{S.slot=v;save();render()}));
+  // 我是哪一隊:直接選隊名(沒抓到聯盟時顯示 Team N)
+  const me=el('span'); me.append(el('span','pos','我是 '));
+  const ms=el('select');
+  for(let t=0;t<S.nTeams;t++)ms.append(new Option(realName(t),t+1));
+  ms.value=S.slot; ms.onchange=()=>{S.slot=+ms.value;if(S.teams)S.myTeam=S.teams[S.slot-1].id;save();render()};
+  me.append(ms); line.append(me);
   draftAuctionBar(line,mk);
 
   const un=el('button','act','復原上一手'); un.onclick=()=>{S.picks.pop();S.owner.pop();S.price.pop();save();render()};
