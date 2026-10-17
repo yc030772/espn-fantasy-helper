@@ -577,6 +577,14 @@ function redrawDraft(){
   const dt=$('#dlt'); dt.innerHTML=''; dt.append(tbl);
 }
 
+/* datalist 依打的字重排:整個名字字首符合 > 某個字的字首符合(例如姓) > 其他。
+   瀏覽器照 option 的順序顯示,所以直接搬動 option。 */
+function rankList(dl,v){
+  v=v.trim().toLowerCase(); if(!v)return;
+  const score=o=>{const n=o.value.toLowerCase();
+    return n.startsWith(v)?0:n.split(/[\s(]+/).some(w=>w.startsWith(v))?1:2};
+  [...dl.options].map((o,i)=>[score(o),i,o]).sort((a,b)=>a[0]-b[0]||a[1]-b[1]).forEach(x=>dl.append(x[2]));
+}
 /* --- 出價面板:點表格裡的人名 -> 在這裡填目前喊價、選得標隊伍、成交 --- */
 function drawNom(){
   const box=$('#nom'); if(!box)return; box.innerHTML='';
@@ -585,7 +593,7 @@ function drawNom(){
   ps.setAttribute('list','plist'); ps.style.width='220px';
   const pl=el('datalist'); pl.id='plist';
   P.filter(p=>!S.picks.includes(p.id)).forEach(p=>{const o=new Option(p.name);o.label=`建議 $${bid(p)??'-'} · 均價 $${p.avg_paid?Math.round(p.avg_paid):'-'}`;pl.append(o)});
-  ps.oninput=()=>{const v=ps.value.trim().toLowerCase();
+  ps.oninput=()=>{rankList(pl,ps.value);const v=ps.value.trim().toLowerCase();
     const q=P.find(p=>!S.picks.includes(p.id)&&p.name.toLowerCase()===v);
     if(q){S.nom=q.id;S.cur=0;save();drawNom();redrawDraft()}};
   // 沒選球員時也畫出整個面板(欄位停用),高度不變,點人名時下面的表格不會跳
@@ -608,6 +616,7 @@ function drawNom(){
     const hit=names.find(x=>x[1]===v)||names.filter(x=>x[1].includes(v)).reduce((a,x,_,all)=>all.length===1?x:a,null);
     return hit?hit[0]:-1};
   pr.oninput=()=>{S.cur=+pr.value||0;save()};
+  sel.oninput=()=>rankList(dl,sel.value);
   const ok=el('button','act pick','成交');
   ok.onclick=()=>{
     const t=findTeam(sel.value), x=+pr.value;
