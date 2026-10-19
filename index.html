@@ -865,10 +865,11 @@ function faView(app){
   right.append(catBars(teamCats(my),Math.max(3,my.length*1.2)));
   const weak=CATS.map(c=>[c,teamCats(my)[c]]).sort((a,b)=>a[1]-b[1]).slice(0,3).map(x=>LBL[x[0]]);
   right.append(el('p','hint','最弱:<b style="color:var(--bad)">'+weak.join(' · ')+'</b>。FA 依總分排序,能補這幾項的人反白標「建議」。'));
-  // 誰該被 drop
-  const worst=[...my].filter(i=>byId[i]).sort((a,b)=>fit(byId[a],w)-fit(byId[b],w)).slice(0,3);
-  right.append(el('h2',null,'考慮 drop'));
-  worst.forEach(i=>right.append(el('p','hint',`${byId[i].name} <span class="pos">${byId[i].pos}</span> · 契合度 ${fit(byId[i],w).toFixed(1)}`)));
+  // 誰該被 drop:看整體價值(總分)最低的三個。不能用補洞分 —— 那是照我缺的類別加權,
+  // 會把 Trae 這種「強在我已經很強的類別、弱在 TO」的主力排到最前面。
+  const worst=[...my].filter(i=>byId[i]).sort((a,b)=>totalOr(byId[a])-totalOr(byId[b])).slice(0,3);
+  right.append(el('h2',null,'考慮 drop(總分最低)'));
+  worst.forEach(i=>right.append(el('p','hint',`${byId[i].name} <span class="pos">${byId[i].pos}</span> · 總分 ${hot(total(byId[i]))}`)));
   left.append(el('h2',null,`可撿的自由球員 (${fa.length} 人)`));
   const fcols=[{h:'總分',k:'total',desc:1,v:p=>total(p),f:p=>hot(total(p))},
     {h:'補洞',k:'fit',desc:1,v:p=>noData(p)?null:fit(p,w),f:p=>noData(p)?'-':fit(p,w).toFixed(1)},
