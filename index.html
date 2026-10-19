@@ -226,7 +226,7 @@ fetch('data.json',{cache:'no-cache'}).then(r=>r.json()).then(d=>{
   P.forEach(p=>byId[p.id]=p);
   $('#src').innerHTML=`${P.length} 名球員 · 數據 ${P[0]?.source||'2025-26 實際'} · 排名/ADP 2026-27`;
   render();
-  if(!S.teams)fetchLeague(S.leagueId||'829293495',S.year||'2027').then(render).catch(()=>{});   // 開頁自動抓隊名
+  fetchLeague(S.leagueId||'829293495',S.year||'2027').then(render).catch(()=>{});   // 開頁一定重抓:隊名與名單會因交易改變,不能用舊快取
 });
 
 /* ---------- ESPN 選秀室同步(espn-draft-sync.user.js 送來的 Picks 清單) ----------
@@ -519,15 +519,16 @@ function drawStandings(){
 }
 
 /* --- 各隊 × 各類別 對照表 --- */
-function standingsTable(){
+function standingsTable(rosters){
   const box=el('div','card'); box.style.marginTop='12px';
-  box.append(el('h2',null,'各隊 × 各類別 對照表'));
-  if(!S.picks.length){
+  box.append(el('h2',null,rosters?'ESPN 實際名單 · 各隊 × 各類別':'各隊 × 各類別 對照表'));
+  if(!rosters&&!S.picks.length){
     box.append(el('p','hint','開始選人之後,這裡會列出全部 '+S.nTeams+' 隊在 9 個類別的數字與名次。'));
     return box;
   }
-  const avg=poolAvg(), all=[...Array(S.nTeams).keys()].map(t=>({t,cat:projCats(t,avg),n:rosterOf(t).length,
-    unk:rosterOf(t).filter(i=>byId[i]&&noData(byId[i])).length}));
+  const avg=rosters?null:poolAvg();
+  const all=[...Array(S.nTeams).keys()].map(t=>{const ids=rosters?rosters[t]:rosterOf(t);
+    return {t,cat:rosters?teamCats(ids):projCats(t,avg),n:ids.length,unk:ids.filter(i=>byId[i]&&noData(byId[i])).length}});
   // 每個類別的名次
   const rk={};
   CATS.forEach(c=>{
@@ -898,6 +899,10 @@ function leagueView(app){
     st.innerHTML=`已載入 ${S.teams.length} 隊。`;
   }
   app.append(c);
+  if(S.teams){
+    const rf=el('button','act','重新抓取 ESPN 名單'); rf.onclick=loadLeague; c.append(' ',rf);
+    app.append(standingsTable(S.teams.map(t=>t.roster)));   // 真實名單(交易審核中的不會反映,要等 ESPN 執行)
+  }
 }
 async function fetchLeague(id,yr){
   const url=`https://lm-api-reads.fantasy.espn.com/apis/v3/games/fba/seasons/${yr}/segments/0/leagues/${id}?view=mTeam&view=mRoster`;
