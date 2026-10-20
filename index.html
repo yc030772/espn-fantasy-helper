@@ -974,8 +974,9 @@ function matchup(a,b,N=400){
 function radar(rkA,rkB,colA,colB,zA,zB){
   const n=CATS.length, R=90, cx=130, cy=126;
   const ang=i=>-Math.PI/2+i*2*Math.PI/n;
-  // 標準化:每軸畫「對聯盟平均的 z」。半徑 0.5R = 聯盟平均,外圈 = +2σ,中心 = −2σ(超過就壓在邊上)
-  const rad=z=>R*(.5+.25*Math.max(-2,Math.min(2,z)));
+  // 標準化:每軸畫「對聯盟平均的 z」。半徑 0.5R = 聯盟平均;用 tanh 軟壓縮:±1σ ≈ ±0.25R,±2σ ≈ ±0.37R,
+  // 再極端也不會疊到中心點或超出外圈,名次順序永遠保留(硬切在 ±2σ 會讓 −2.1σ 和 −2.5σ 都變成同一點)
+  const rad=z=>R*(.5+.42*Math.tanh(z/1.5));
   const pts=zz=>CATS.map((c,i)=>[cx+rad(zz[c])*Math.cos(ang(i)),cy+rad(zz[c])*Math.sin(ang(i))]);
   const ring=f=>`<polygon points="${CATS.map((_,i)=>[cx+R*f*Math.cos(ang(i)),cy+R*f*Math.sin(ang(i))].join(',')).join(' ')}" fill="${f===1?'#ffffff':'none'}" fill-opacity=".03" stroke="var(--line)" stroke-width="${f===1?1.5:1}"/>`;
   const spokes=CATS.map((_,i)=>`<line x1="${cx}" y1="${cy}" x2="${cx+R*Math.cos(ang(i))}" y2="${cy+R*Math.sin(ang(i))}" stroke="var(--line)" stroke-width="1"/>`).join('');
@@ -986,7 +987,7 @@ function radar(rkA,rkB,colA,colB,zA,zB){
       +`<text x="${x}" y="${y+13}" text-anchor="middle" font-size="10"><tspan fill="${colA}">${rkA[c]}</tspan><tspan fill="var(--dim)"> · </tspan><tspan fill="${colB}">${rkB[c]}</tspan></text>`});
   const avg=`<polygon points="${CATS.map((_,i)=>[cx+R*.5*Math.cos(ang(i)),cy+R*.5*Math.sin(ang(i))].join(',')).join(' ')}" fill="none" stroke="var(--dim)" stroke-width="1.2" stroke-dasharray="3 3"/>`;
   return `<svg viewBox="0 0 260 262" style="width:100%;max-width:300px;display:block;margin:0 auto">${ring(.25)}${ring(.75)}${ring(1)}${spokes}${avg}${poly(zB,colB)}${poly(zA,colA)}${labels.join('')}</svg>
-  <div class="hint" style="text-align:center;margin-top:2px">雷達 = 標準化(對聯盟平均的 z):虛線圈 = 聯盟平均,外圈 = +2σ;標籤下方是兩隊聯盟名次</div>`;
+  <div class="hint" style="text-align:center;margin-top:2px">雷達 = 標準化(對聯盟平均的 z):虛線圈 = 聯盟平均,往外 1σ 約一格;標籤下方是兩隊聯盟名次</div>`;
 }
 function courtSVG(colA,colB){
   const W=1200,H=520;
