@@ -131,10 +131,10 @@ th.sortable:hover{color:var(--fg)}
   <h1>🏀 Fantasy 助手 <span style="color:var(--dim);font-weight:400">H2H 9-Cat</span></h1>
   <span class="hint" id="src"></span>
   <div class="tabs">
-    <button data-t="draft" class="on">選秀</button>
+    <button data-t="draft" hidden>選秀</button>   <!-- 選秀結束,先藏起來;網址加 ?draft 可叫回來 -->
     <button data-t="all">總分表</button>
     <button data-t="trade">交易</button>
-    <button data-t="arena">擂台</button>
+    <button data-t="arena" class="on">擂台</button>
     <button data-t="fa">FA</button>
     <button data-t="league">連結聯盟</button>
   </div>
@@ -168,7 +168,8 @@ S.asort=S.asort||{k:'total',dir:-1};  // 總分表
 if(S.gp===undefined)S.gp=false;   // 出賽數折算預設關,見 durability()
 S.mine=[]; S.gone=[];   // 由 picks 推導,見 syncDraft()
 S.w=S.w||{...PRESETS['均衡(建議)']}; S.preset=S.preset||'均衡(建議)';
-let P=[], byId={}, T={}, tab='draft';
+let P=[], byId={}, T={}, tab='arena';
+if(location.search.includes('draft')){tab='draft';document.querySelector('[data-t=draft]').hidden=false;document.querySelector('[data-t=arena]').classList.remove('on');document.querySelector('[data-t=draft]').classList.add('on')}
 const teamOf=i=>S.owner[i];
 const rosterOf=t=>S.picks.filter((_,i)=>teamOf(i)===t);
 const realName=t=>S.teams&&S.teams[t]?S.teams[t].name:`Team ${t+1}`;
