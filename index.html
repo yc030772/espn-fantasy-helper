@@ -940,10 +940,10 @@ function hueKey(hex){
   const n=parseInt((hex||'#888').slice(1),16), r=(n>>16&255)/255, g=(n>>8&255)/255, b=(n&255)/255;
   const mx=Math.max(r,g,b), mn=Math.min(r,g,b), d=mx-mn, l=(mx+mn)/2, sat=d?d/(1-Math.abs(2*l-1)):0;
   let h=0; if(d){h=mx===r?((g-b)/d+6)%6:mx===g?(b-r)/d+2:(r-g)/d+4; h*=60}
-  return sat<.2?-100+l*50:h;   // 灰階放最前面,再依色相 紅→黃→綠→藍→紫
+  return sat<.2?-100+l*50:(h+30)%360;   // 灰階放最前面;色相從紅起算(紅 350° 會繞回開頭),順序 紅→橘→黃→綠→藍→紫
 }
 // 擂台用的球隊代表色:ESPN 給的主色有幾隊是深色底(溜馬藍、太陽紫),改用大家認得的那個色
-const ARENA_COLOR={IND:'#FDBB30',PHX:'#E56020',NO:'#C8102E',NY:'#F58426',DET:'#C8102E'};   // 鵜鶘紅、尼克橘、活塞紅
+const ARENA_COLOR={IND:'#FDBB30',PHX:'#E56020',NO:'#C8102E',NY:'#F58426',DET:'#C8102E',DEN:'#FEC524'};   // 鵜鶘紅、尼克橘、活塞紅、金塊金
 const teamColor=p=>ARENA_COLOR[tm(p).abbr]||tm(p).color;
 const HEAD=id=>`https://a.espncdn.com/i/headshots/nba/players/full/${id}.png`;
 const RAWK=['PTS','REB','AST','STL','BLK','3PM','TO','FGM','FGA','FTM','FTA'];
