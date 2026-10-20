@@ -1110,7 +1110,8 @@ function leagueView(app){
   app.append(c);
   if(S.teams){
     const rf=el('button','act','重新抓取 ESPN 名單'); rf.onclick=loadLeague; c.append(' ',rf);
-    app.append(standingsTable(S.teams.map(t=>t.roster)));   // 真實名單(交易審核中的不會反映,要等 ESPN 執行)
+    // 各隊 × 各類別對照表先藏起來(網址加 ?matrix 可叫回來)
+    if(location.search.includes('matrix')) app.append(standingsTable(S.teams.map(t=>t.roster)));
   }
 }
 async function fetchLeague(id,yr){
