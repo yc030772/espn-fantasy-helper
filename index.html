@@ -66,10 +66,14 @@ tbody tr.rec td{border-top-color:#25507f}
 .vs .sub{color:var(--dim);font-size:12px;margin:4px 0 10px}
 .tug{display:grid;grid-template-columns:44px 34px 1fr 44px;gap:8px;align-items:center;font-size:12px;margin:5px 0}
 .tug .k{color:var(--dim);font-size:11px;text-align:center}
-.tug .bar{position:relative;height:16px;background:#222a33;border-radius:8px;overflow:hidden}
-.tug .bar i{position:absolute;top:0;bottom:0}
-.tug .bar b{position:absolute;left:50%;top:0;bottom:0;width:2px;background:var(--bg)}
-.tug .bar span{position:absolute;top:0;line-height:16px;font-size:10px;color:#fff;font-weight:700}
+.tbar{position:relative;height:18px;background:#222a33;border-radius:9px;overflow:hidden}
+.tbar .fl,.tbar .fr{position:absolute;top:0;bottom:0}
+.tbar .fl{right:50%;border-radius:9px 0 0 9px}
+.tbar .fr{left:50%;border-radius:0 9px 9px 0}
+.tbar .mid{position:absolute;left:50%;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--bg)}
+.tbar .pl,.tbar .pr{position:absolute;top:0;line-height:18px;font-size:11px;font-weight:700;color:var(--dim)}
+.tbar .pl{left:8px}.tbar .pr{right:8px}
+.tbar .win{color:#fff}
 .tug .l{text-align:right}
 .pill{font-size:10px;padding:1px 5px;border-radius:4px;background:#2a2016;color:var(--warn);
   margin-left:4px;flex-shrink:0}
@@ -1017,12 +1021,14 @@ function arenaView(app){
   const tugs=el('div'); tugs.style.marginTop='10px';
   CATS.forEach(c=>{
     const k=LBL[c], p=m.cw[k]??m.cw[c], l=Math.round(100*p), r=100-l;   // l = A 贏該類別的機率
+    // 只畫贏家那一側:從中線往贏家方向長,長度 = 領先幅度(50% 平手 = 空,100% = 填滿半邊),顏色 = 贏家隊色
+    const aWin=l>r, lead=Math.abs(l-50)/50*50;
     const row=el('div','tug');
-    row.innerHTML=`<span class="l" style="color:${colA};font-weight:${l>=60?700:400}">${ca[c].toFixed(1)}</span>`
+    row.innerHTML=`<span class="l" style="color:${colA};font-weight:${aWin?700:400};opacity:${aWin?1:.6}">${ca[c].toFixed(1)}</span>`
       +`<span class="k">${k}</span>`
-      +`<div class="bar"><i style="right:50%;width:${l/2}%;background:${colA}"></i><i style="left:50%;width:${r/2}%;background:${colB}"></i><b></b>`
-      +`<span style="left:6px">${l}%</span><span style="right:6px">${r}%</span></div>`
-      +`<span style="color:${colB};font-weight:${r>=60?700:400}">${cb[c].toFixed(1)}</span>`;
+      +`<div class="tbar">${aWin?`<i class="fl" style="width:${lead}%;background:${colA}"></i>`:l===r?'':`<i class="fr" style="width:${lead}%;background:${colB}"></i>`}<i class="mid"></i>`
+      +`<span class="pl ${aWin?'win':''}">${l}%</span><span class="pr ${!aWin&&l!==r?'win':''}">${r}%</span></div>`
+      +`<span style="color:${colB};font-weight:${!aWin&&l!==r?700:400};opacity:${!aWin&&l!==r?1:.6}">${cb[c].toFixed(1)}</span>`;
     tugs.append(row);
   });
   mid.append(tugs);
