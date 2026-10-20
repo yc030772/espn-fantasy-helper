@@ -66,9 +66,8 @@ tbody tr.rec td{border-top-color:#25507f}
 .rest img{width:100%;aspect-ratio:1;object-fit:cover;object-position:top;border-radius:50%;background:#222a33;border:2px solid var(--line);opacity:.9}
 .rest .nm{font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}
 .rest .sc{font-size:11px;color:var(--dim)}
-.logos{display:flex;flex-wrap:wrap;gap:4px;margin-top:10px;align-items:center}
-.logos img{width:22px;height:22px;object-fit:contain}
-.logos .sep{width:1px;height:18px;background:var(--line);margin:0 2px}
+.logos{display:grid;gap:4px;margin-top:10px;align-items:center}
+.logos img{width:100%;aspect-ratio:1;object-fit:contain}
 .ateam{position:relative;padding-bottom:22px}
 .ateam .grad{position:absolute;left:0;right:0;bottom:0;height:12px;border-radius:0 0 10px 10px}
 .vs{text-align:center}
@@ -936,6 +935,13 @@ function faView(app){
 
 /* ---------- 擂台:任選兩隊,一眼比戰力 ---------- */
 const lastName=p=>p.name.replace(/\s+(Jr\.?|Sr\.?|II|III|IV)$/,'').split(' ').slice(-1)[0];
+/* 球隊主色的色相(0~360),彩虹排序用;黑白灰(飽和度低)排最前 */
+function hueKey(hex){
+  const n=parseInt((hex||'#888').slice(1),16), r=(n>>16&255)/255, g=(n>>8&255)/255, b=(n&255)/255;
+  const mx=Math.max(r,g,b), mn=Math.min(r,g,b), d=mx-mn, l=(mx+mn)/2, sat=d?d/(1-Math.abs(2*l-1)):0;
+  let h=0; if(d){h=mx===r?((g-b)/d+6)%6:mx===g?(b-r)/d+2:(r-g)/d+4; h*=60}
+  return sat<.2?-100+l*50:h;   // 灰階放最前面,再依色相 紅→黃→綠→藍→紫
+}
 const HEAD=id=>`https://a.espncdn.com/i/headshots/nba/players/full/${id}.png`;
 const RAWK=['PTS','REB','AST','STL','BLK','3PM','TO','FGM','FGA','FTM','FTA'];
 /* 單週模擬:每人每週 ≈ 3.5 場 × 出賽率,各項數據加卜瓦松等級的雜訊,跟 rank.py 的回測用同一套 */
@@ -1029,10 +1035,10 @@ function arenaView(app){
     rest.forEach(p=>{const d=el('div','pl'); d.innerHTML=`<img src="${HEAD(p.id)}" alt="" loading="lazy" onerror="this.style.opacity=.2">`
       +`<div class="nm" title="${p.name}">${lastName(p)}</div><div class="sc">${total(p)===null?'–':total(p).toFixed(1)}</div>`; rg.append(d)});
     box.append(rg);
-    // 隊徽:每個隊員一個,同一支 NBA 球隊排在一起(兩個公牛就兩個公牛)
-    const byTeam=[...all].sort((a,b)=>(tm(a).abbr).localeCompare(tm(b).abbr)); const lg=el('div','logos'); let prev=null;
-    byTeam.forEach(p=>{const x=tm(p); if(prev&&prev!==x.abbr)lg.append(el('span','sep')); prev=x.abbr;
-      const im=document.createElement('img'); im.src=x.logo||''; im.title=`${p.name} · ${x.abbr}`; im.alt=x.abbr; lg.append(im)});
+    // 隊徽:每個隊員一個,依球隊主色的色相排(彩虹序),同隊自然相鄰;固定等寬格子排成一列
+    const byTeam=[...all].sort((a,b)=>hueKey(tm(a).color)-hueKey(tm(b).color)||tm(a).abbr.localeCompare(tm(b).abbr));
+    const lg=el('div','logos'); lg.style.gridTemplateColumns=`repeat(${byTeam.length},1fr)`;
+    byTeam.forEach(p=>{const x=tm(p); const im=document.createElement('img'); im.src=x.logo||''; im.title=`${p.name} · ${x.abbr}`; im.alt=x.abbr; lg.append(im)});
     box.append(lg);
     // 底部漸層:隊員球隊的主色依序組成
     const stops=byTeam.map((p,i)=>`${tm(p).color} ${(100*i/byTeam.length).toFixed(1)}% ${(100*(i+1)/byTeam.length).toFixed(1)}%`);
