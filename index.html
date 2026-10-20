@@ -942,6 +942,9 @@ function hueKey(hex){
   let h=0; if(d){h=mx===r?((g-b)/d+6)%6:mx===g?(b-r)/d+2:(r-g)/d+4; h*=60}
   return sat<.2?-100+l*50:h;   // 灰階放最前面,再依色相 紅→黃→綠→藍→紫
 }
+// 擂台用的球隊代表色:ESPN 給的主色有幾隊是深色底(溜馬藍、太陽紫),改用大家認得的那個色
+const ARENA_COLOR={IND:'#FDBB30',PHX:'#E56020'};
+const teamColor=p=>ARENA_COLOR[tm(p).abbr]||tm(p).color;
 const HEAD=id=>`https://a.espncdn.com/i/headshots/nba/players/full/${id}.png`;
 const RAWK=['PTS','REB','AST','STL','BLK','3PM','TO','FGM','FGA','FTM','FTA'];
 /* 單週模擬:每人每週 ≈ 3.5 場 × 出賽率,各項數據加卜瓦松等級的雜訊,跟 rank.py 的回測用同一套 */
@@ -1038,12 +1041,12 @@ function arenaView(app){
       +`<div class="nm" title="${p.name}">${lastName(p)}</div><div class="sc">${total(p)===null?'–':total(p).toFixed(1)}</div>`; rg.append(d)});
     box.append(rg);
     // 隊徽:每個隊員一個,依球隊主色的色相排(彩虹序),同隊自然相鄰;固定等寬格子排成一列
-    const byTeam=[...all].sort((a,b)=>hueKey(tm(a).color)-hueKey(tm(b).color)||tm(a).abbr.localeCompare(tm(b).abbr));
+    const byTeam=[...all].sort((a,b)=>hueKey(teamColor(a))-hueKey(teamColor(b))||tm(a).abbr.localeCompare(tm(b).abbr));
     const lg=el('div','logos'); lg.style.gridTemplateColumns=`repeat(${byTeam.length},1fr)`;
     byTeam.forEach(p=>{const x=tm(p); const im=document.createElement('img'); im.src=x.logo||''; im.title=`${p.name} · ${x.abbr}`; im.alt=x.abbr; lg.append(im)});
     box.append(lg);
     // 底部漸層:隊員球隊的主色依序組成
-    const stops=byTeam.map((p,i)=>`${tm(p).color} ${(100*i/byTeam.length).toFixed(1)}% ${(100*(i+1)/byTeam.length).toFixed(1)}%`);
+    const stops=byTeam.map((p,i)=>`${teamColor(p)} ${(100*i/byTeam.length).toFixed(1)}% ${(100*(i+1)/byTeam.length).toFixed(1)}%`);
     const g=el('div','grad'); g.style.background=`linear-gradient(90deg,${stops.join(',')})`; g.title='隊員所屬球隊顏色'; box.append(g);
     return box;
   };
