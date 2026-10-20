@@ -1019,8 +1019,9 @@ function arenaView(app){
   const pa=Math.round(100*m.pA), pb=Math.round(100*m.pB);
   // 標題改成預期類別比數:藍勝-紅勝-和局(四捨五入後補成 9 類)
   const wA=Math.round(m.catsA), tie=Math.round(9-m.catsA-m.catsB), wB=Math.max(0,9-wA-tie);   // 先四捨五入藍勝與和局,紅勝補到 9,總和才一定是 9
-  mid.innerHTML=`<div class="big"><span style="color:${colA}">${wA}</span><span class="pos">-</span><span style="color:${colB}">${wB}</span><span class="pos">-</span><span style="color:var(--dim)">${tie}</span></div>`
-    +`<div class="sub"><span style="color:${colA}">藍勝</span> · <span style="color:${colB}">紅勝</span> · 和局 &nbsp;|&nbsp; 單週勝率 <b style="color:${colA}">${pa}%</b> / <b style="color:${colB}">${pb}%</b>(400 次模擬)</div>`+radar(ca,cb,colA,colB);
+  const dash=`<span style="color:var(--dim);margin:0 .12em">-</span>`;   // 跟數字同字級,不用 .pos(那是 11px)
+  mid.innerHTML=`<div class="big"><span style="color:${colA}">${wA}</span>${dash}<span style="color:${colB}">${wB}</span>${dash}<span style="color:var(--dim)">${tie}</span></div>`
+    +`<div class="sub">單週勝率 <b style="color:${colA}">${pa}%</b> / <b style="color:${colB}">${pb}%</b>(400 次模擬)</div>`+radar(ca,cb,colA,colB);
   const tugs=el('div'); tugs.style.marginTop='10px';
   CATS.forEach(c=>{
     const k=LBL[c], p=m.cw[k]??m.cw[c], l=Math.round(100*p), r=100-l;   // l = A 贏該類別的機率
