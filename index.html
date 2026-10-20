@@ -943,7 +943,7 @@ function hueKey(hex){
   return sat<.2?-100+l*50:h;   // 灰階放最前面,再依色相 紅→黃→綠→藍→紫
 }
 // 擂台用的球隊代表色:ESPN 給的主色有幾隊是深色底(溜馬藍、太陽紫),改用大家認得的那個色
-const ARENA_COLOR={IND:'#FDBB30',PHX:'#E56020'};
+const ARENA_COLOR={IND:'#FDBB30',PHX:'#E56020',NO:'#C8102E',NY:'#F58426',DET:'#C8102E'};   // 鵜鶘紅、尼克橘、活塞紅
 const teamColor=p=>ARENA_COLOR[tm(p).abbr]||tm(p).color;
 const HEAD=id=>`https://a.espncdn.com/i/headshots/nba/players/full/${id}.png`;
 const RAWK=['PTS','REB','AST','STL','BLK','3PM','TO','FGM','FGA','FTM','FTA'];
