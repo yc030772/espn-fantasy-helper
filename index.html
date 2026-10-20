@@ -968,25 +968,27 @@ function matchup(a,b,N=400){
   }
   return {pA:win[0]/N,pB:win[1]/N,tie:win[2]/N,catsA:catsA/N,catsB:catsB/N,cw:Object.fromEntries(SIMK.map(k=>[k,cw[k]/N]))};
 }
-/* 雷達圖:每軸畫「聯盟名次」,外圈 = 第 1、中心 = 第 12。
-   不用數值 min~max:只要有一隊是極端值(Starry 的 FG%),其他隊全被壓到中心變成星星。
-   TO 的 z 已經是「越高越好」,不要再反向。 */
-function radar(rkA,rkB,colA,colB,zA,zB){
-  const n=CATS.length, R=90, cx=130, cy=126;
+/* 雷達圖:原始數據相加,再在全聯盟 12 隊之間 min~max 標準化到 0~1(TO 反向)。
+   每隊 = 13 人場均加總(FG%/FT% 用總命中/總出手),0 = 聯盟最弱、1 = 聯盟最強。 */
+const RADAR_K=['PTS','REB','AST','STL','BLK','3PM','TO','FG%','FT%'];
+function teamRaw(ids){
+  const s={}; RAWK.forEach(k=>s[k]=0);
+  ids.forEach(i=>{const p=byId[i]; if(p&&p.GP) RAWK.forEach(k=>s[k]+=p[k]||0)});
+  return {PTS:s.PTS,REB:s.REB,AST:s.AST,STL:s.STL,BLK:s.BLK,'3PM':s['3PM'],TO:s.TO,'FG%':s.FGA?s.FGM/s.FGA:0,'FT%':s.FTA?s.FTM/s.FTA:0};
+}
+function radar(nA,nB,colA,colB){
+  const n=RADAR_K.length, R=90, cx=130, cy=126;
   const ang=i=>-Math.PI/2+i*2*Math.PI/n;
-  // 標準化:每軸畫「對聯盟平均的 z」。半徑 0.5R = 聯盟平均;用 tanh 軟壓縮:±1σ ≈ ±0.25R,±2σ ≈ ±0.37R,
-  // 再極端也不會疊到中心點或超出外圈,名次順序永遠保留(硬切在 ±2σ 會讓 −2.1σ 和 −2.5σ 都變成同一點)
-  const rad=z=>R*(.5+.42*Math.tanh(z/1.5));
-  const pts=zz=>CATS.map((c,i)=>[cx+rad(zz[c])*Math.cos(ang(i)),cy+rad(zz[c])*Math.sin(ang(i))]);
-  const ring=f=>`<polygon points="${CATS.map((_,i)=>[cx+R*f*Math.cos(ang(i)),cy+R*f*Math.sin(ang(i))].join(',')).join(' ')}" fill="${f===1?'#ffffff':'none'}" fill-opacity=".03" stroke="var(--line)" stroke-width="${f===1?1.5:1}"/>`;
-  const spokes=CATS.map((_,i)=>`<line x1="${cx}" y1="${cy}" x2="${cx+R*Math.cos(ang(i))}" y2="${cy+R*Math.sin(ang(i))}" stroke="var(--line)" stroke-width="1"/>`).join('');
-  const poly=(rk,col)=>{const p=pts(rk);return `<polygon points="${p.map(q=>q.join(',')).join(' ')}" fill="${col}" fill-opacity=".22" stroke="${col}" stroke-width="2.5" stroke-linejoin="round"/>`
+  const rad=v=>R*(.08+.92*v);   // 0~1 → 半徑;留 8% 讓最弱的那點也看得到
+  const pts=nn=>RADAR_K.map((k,i)=>[cx+rad(nn[k])*Math.cos(ang(i)),cy+rad(nn[k])*Math.sin(ang(i))]);
+  const ring=f=>`<polygon points="${RADAR_K.map((_,i)=>[cx+R*f*Math.cos(ang(i)),cy+R*f*Math.sin(ang(i))].join(',')).join(' ')}" fill="${f===1?'#ffffff':'none'}" fill-opacity=".03" stroke="var(--line)" stroke-width="${f===1?1.5:1}"/>`;
+  const spokes=RADAR_K.map((_,i)=>`<line x1="${cx}" y1="${cy}" x2="${cx+R*Math.cos(ang(i))}" y2="${cy+R*Math.sin(ang(i))}" stroke="var(--line)" stroke-width="1"/>`).join('');
+  const poly=(nn,col)=>{const p=pts(nn);return `<polygon points="${p.map(q=>q.join(',')).join(' ')}" fill="${col}" fill-opacity=".22" stroke="${col}" stroke-width="2.5" stroke-linejoin="round"/>`
     +p.map(q=>`<circle cx="${q[0]}" cy="${q[1]}" r="3.2" fill="${col}" stroke="var(--card)" stroke-width="1.5"/>`).join('')};
-  const labels=CATS.map((c,i)=>{const x=cx+(R+22)*Math.cos(ang(i)), y=cy+(R+22)*Math.sin(ang(i));
-    return `<text x="${x}" y="${y+4}" text-anchor="middle" font-size="11" font-weight="600" fill="var(--fg)">${LBL[c]}</text>`});
-  const avg=`<polygon points="${CATS.map((_,i)=>[cx+R*.5*Math.cos(ang(i)),cy+R*.5*Math.sin(ang(i))].join(',')).join(' ')}" fill="none" stroke="var(--dim)" stroke-width="1.2" stroke-dasharray="3 3"/>`;
-  return `<svg viewBox="0 0 260 262" style="width:100%;max-width:300px;display:block;margin:0 auto">${ring(.25)}${ring(.75)}${ring(1)}${spokes}${avg}${poly(zB,colB)}${poly(zA,colA)}${labels.join('')}</svg>
-  <div class="hint" style="text-align:center;margin-top:2px">雷達 = 標準化(對聯盟平均的 z):虛線圈 = 聯盟平均,往外 1σ 約一格</div>`;
+  const labels=RADAR_K.map((k,i)=>{const x=cx+(R+22)*Math.cos(ang(i)), y=cy+(R+22)*Math.sin(ang(i));
+    return `<text x="${x}" y="${y+4}" text-anchor="middle" font-size="11" font-weight="600" fill="var(--fg)">${k}</text>`});
+  return `<svg viewBox="0 0 260 262" style="width:100%;max-width:300px;display:block;margin:0 auto">${ring(.25)}${ring(.5)}${ring(.75)}${ring(1)}${spokes}${poly(nB,colB)}${poly(nA,colA)}${labels.join('')}</svg>
+  <div class="hint" style="text-align:center;margin-top:2px">雷達 = 13 人場均加總,在全聯盟 12 隊之間標準化到 0~1(外圈 = 聯盟最強,TO 反向)</div>`;
 }
 function courtSVG(colA,colB){
   const W=1200,H=520;
@@ -1058,17 +1060,17 @@ function arenaView(app){
   };
   const mid=el('div','card vs');
   const m=matchup(A.roster,B.roster), ca=teamCats(A.roster), cb=teamCats(B.roster), rosters=S.teams.map(t=>t.roster);
-  // 各隊各類別對聯盟平均的 z(標準化),給雷達圖用
-  const allC=rosters.map(ids=>teamCats(ids)), lz=allC.map(()=>({}));
-  CATS.forEach(c=>{const vs=allC.map(t=>t[c]), mu=vs.reduce((a,b)=>a+b,0)/vs.length, sd=Math.sqrt(vs.reduce((a,v)=>a+(v-mu)**2,0)/vs.length)||1;
-    allC.forEach((t,i)=>lz[i][c]=(t[c]-mu)/sd)});
+  // 雷達圖用:各隊原始數據加總,在 12 隊之間 min~max 標準化到 0~1(TO 反向)
+  const raw=rosters.map(ids=>teamRaw(ids)), nrm=raw.map(()=>({}));
+  RADAR_K.forEach(k=>{const vs=raw.map(t=>t[k]), lo=Math.min(...vs), hi=Math.max(...vs), span=hi-lo||1;
+    raw.forEach((t,i)=>nrm[i][k]=k==='TO'?(hi-t[k])/span:(t[k]-lo)/span)});
   const pa=Math.round(100*m.pA), pb=Math.round(100*m.pB);
   // 標題改成預期類別比數:藍勝-紅勝-和局(四捨五入後補成 9 類)
   const wA=Math.round(m.catsA), tie=Math.round(9-m.catsA-m.catsB), wB=Math.max(0,9-wA-tie);   // 先四捨五入藍勝與和局,紅勝補到 9,總和才一定是 9
   const dash=`<span style="color:var(--dim);margin:0 .12em">-</span>`;   // 跟數字同字級,不用 .pos(那是 11px)
   mid.innerHTML=`<div class="big"><span style="color:${colA}">${wA}</span>${dash}<span style="color:${colB}">${wB}</span>${dash}<span style="color:var(--dim)">${tie}</span></div>`
     +`<div class="sub">單週勝率 <b style="color:${colA}">${pa}%</b> / <b style="color:${colB}">${pb}%</b>(400 次模擬)</div>`
-    +radar(leagueRanks(rosters,S.teams.indexOf(A)),leagueRanks(rosters,S.teams.indexOf(B)),colA,colB,lz[S.teams.indexOf(A)],lz[S.teams.indexOf(B)]);
+    +radar(nrm[S.teams.indexOf(A)],nrm[S.teams.indexOf(B)],colA,colB);
   const tugs=el('div'); tugs.style.marginTop='10px';
   CATS.forEach(c=>{
     const k=LBL[c], p=m.cw[k]??m.cw[c], l=Math.round(100*p), r=100-l;   // l = A 贏該類別的機率
