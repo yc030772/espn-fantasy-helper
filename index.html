@@ -1042,7 +1042,11 @@ function arenaView(app){
   ws.onchange=()=>{S.arena={wk:+ws.value,m:-1};save();render()};
   const msel=el('select'); ms.forEach((m,i)=>msel.append(new Option(`${S.teams.find(t=>t.id===m[0]).name}  vs  ${S.teams.find(t=>t.id===m[1]).name}`,i))); msel.value=mi;
   msel.onchange=()=>{S.arena.m=+msel.value;save();render()};
-  bar.append(ws,msel,el('span','hint','用該週 NBA 真實賽程算每位球員的場數'));
+  const step=d=>{const w=wk+d; if(w>=1&&w<=21){S.arena={wk:w,m:-1};save();render()}};
+  const btn=(t,d)=>{const b=el('button',null,t); b.onclick=()=>step(d); b.title=d<0?'上一週 (←)':'下一週 (→)'; return b};
+  bar.append(btn('◀',-1),ws,btn('▶',1),msel,el('span','hint','用該週 NBA 真實賽程算每位球員的場數;← → 切換週'));
+  // 鍵盤 ← → 切週(每次 render 換掉舊的 handler,不重複綁)
+  document.onkeydown=e=>{if(tab!=='arena'||/INPUT|SELECT|TEXTAREA/.test(e.target.tagName))return; if(e.key==='ArrowLeft'){e.preventDefault();step(-1)} if(e.key==='ArrowRight'){e.preventDefault();step(1)}};
   app.append(bar);
   const side=(t,key,col)=>{
     const box=el('div','card ateam'); box.style.borderTop=`3px solid ${col}`;
