@@ -177,7 +177,7 @@ S.asort=S.asort||{k:'total',dir:-1};  // 總分表
 if(S.gp===undefined)S.gp=false;   // 出賽數折算預設關,見 durability()
 S.mine=[]; S.gone=[];   // 由 picks 推導,見 syncDraft()
 S.w=S.w||{...PRESETS['均衡(建議)']}; S.preset=S.preset||'均衡(建議)';
-let P=[], byId={}, T={}, tab='arena';
+let P=[], byId={}, T={}, WK={}, tab='arena';   // WK = 每個對戰週各 NBA 球隊的出賽場數(data.json weeks)
 if(location.search.includes('draft')){tab='draft';document.querySelector('[data-t=draft]').hidden=false;document.querySelector('[data-t=arena]').classList.remove('on');document.querySelector('[data-t=draft]').classList.add('on')}
 const teamOf=i=>S.owner[i];
 const rosterOf=t=>S.picks.filter((_,i)=>teamOf(i)===t);
@@ -260,7 +260,7 @@ const heat=v=>{const t=Math.max(-1,Math.min(1,v/8));
 const hot=(v,d=1)=>v===null?'<span class="pos">–</span>':`<b style="color:${heat(v)}">${v.toFixed(d)}</b>`;
 
 fetch('data.json',{cache:'no-cache'}).then(r=>r.json()).then(d=>{
-  P=d.players||d; T=d.teams||{};                       // 舊格式(純陣列)也還能開
+  P=d.players||d; T=d.teams||{}; WK=d.weeks||{};        // 舊格式(純陣列)也還能開
   P.forEach(p=>byId[p.id]=p);
   $('#src').innerHTML=`${P.length} 名球員 · 數據 ${P[0]?.source||'2025-26 實際'} · 排名/ADP 2026-27`;
   render();
@@ -947,11 +947,13 @@ const ARENA_COLOR={IND:'#FDBB30',PHX:'#E56020',NO:'#C8102E',NY:'#F58426',DET:'#C
 const teamColor=p=>ARENA_COLOR[tm(p).abbr]||tm(p).color;
 const HEAD=id=>`https://a.espncdn.com/i/headshots/nba/players/full/${id}.png`;
 const RAWK=['PTS','REB','AST','STL','BLK','3PM','TO','FGM','FGA','FTM','FTA'];
-/* 單週模擬:每人每週 ≈ 3.5 場 × 出賽率,各項數據加卜瓦松等級的雜訊,跟 rank.py 的回測用同一套 */
-function simWeek(ids,rnd){
+/* 單週模擬:每人用他 NBA 球隊該週的真實場數(WK[wk]),每場以 GP/82 的機率上場;沒有週資料時退回每週 3.5 場。
+   各項數據加卜瓦松等級的雜訊,跟 rank.py 的回測用同一套 */
+const gamesOf=(p,wk)=>WK[wk]?.g?.[p.team]??3.5;
+function simWeek(ids,rnd,wk){
   const s={}; RAWK.forEach(k=>s[k]=0);
   ids.forEach(i=>{const p=byId[i]; if(!p||!p.GP)return;
-    const g=3.5*p.GP/82; let played=0; for(let k=0;k<4;k++) if(rnd()<g/4) played++;
+    const g=gamesOf(p,wk), n=Math.ceil(g); let played=0; for(let k=0;k<n;k++) if(rnd()<g/n*p.GP/82) played++;
     RAWK.forEach(k=>{const m=(p[k]||0)*played; if(m>0) s[k]+=Math.max(0,m+gauss(rnd)*Math.sqrt(m)*1.2)});
   });
   return {PTS:s.PTS,REB:s.REB,AST:s.AST,STL:s.STL,BLK:s.BLK,'3PM':s['3PM'],TO:s.TO,'FG%':s.FGA?s.FGM/s.FGA:0,'FT%':s.FTA?s.FTM/s.FTA:0};
@@ -959,10 +961,10 @@ function simWeek(ids,rnd){
 const gauss=rnd=>{let u=0,v=0;while(!u)u=rnd();while(!v)v=rnd();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)};
 const mulberry=a=>()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};
 const SIMK=['PTS','REB','AST','STL','BLK','3PM','TO','FG%','FT%'];
-function matchup(a,b,N=400){
+function matchup(a,b,wk,N=400){
   const rnd=mulberry(7), cw={}, win=[0,0,0]; SIMK.forEach(k=>cw[k]=0); let catsA=0,catsB=0;
   for(let n=0;n<N;n++){
-    const x=simWeek(a,rnd), y=simWeek(b,rnd); let wa=0,wb=0;
+    const x=simWeek(a,rnd,wk), y=simWeek(b,rnd,wk); let wa=0,wb=0;
     SIMK.forEach(k=>{const u=k==='TO'?-x[k]:x[k], v=k==='TO'?-y[k]:y[k]; if(u>v){wa++;cw[k]++} else if(v>u) wb++});
     catsA+=wa; catsB+=wb; win[wa>wb?0:wb>wa?1:2]++;
   }
@@ -1029,14 +1031,24 @@ function courtSVG(colA,colB){
 }
 function arenaView(app){
   if(!S.teams){app.append(el('div','card','<h2>擂台</h2><p class="hint">先到「連結聯盟」抓取聯盟。</p>'));return}
-  S.arena=S.arena||{a:S.myTeam,b:S.teams.find(t=>t.id!==S.myTeam).id};
-  const A=S.teams.find(t=>t.id===S.arena.a)||S.teams[0], B=S.teams.find(t=>t.id===S.arena.b)||S.teams[1];
-  const colA='#4c9aff', colB='#ff6b6b';
+  if(!S.sched||!S.sched[1]){app.append(el('div','card','<h2>擂台</h2><p class="hint">對戰表還沒抓到,請重新整理。</p>'));return}
+  // 週 1~21 下拉;預設 ESPN 目前這週、我的那場
+  const a0=S.arena||{}, wk=S.sched[a0.wk]?a0.wk:S.curWeek, ms=S.sched[wk]||[];
+  let mi=ms.findIndex(m=>m.includes(S.myTeam)); if(a0.wk===wk&&ms[a0.m])mi=a0.m; if(mi<0)mi=0;
+  S.arena={wk,m:mi}; save();
+  const [ha,aw]=ms[mi], A=S.teams.find(t=>t.id===ha), B=S.teams.find(t=>t.id===aw);
+  const colA='#4c9aff', colB='#ff6b6b', W=WK[wk]||{};
+  const bar=el('div','card'); bar.style.cssText='display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px';
+  const ws=el('select'); for(let w=1;w<=21;w++){const o=new Option(`Week ${w}  ${(WK[w]?.from||'').slice(5).replace('-','/')}~${(WK[w]?.to||'').slice(5).replace('-','/')}`+(w===S.curWeek?' (本週)':''),w); ws.append(o)} ws.value=wk;
+  ws.onchange=()=>{S.arena={wk:+ws.value,m:-1};save();render()};
+  const msel=el('select'); ms.forEach((m,i)=>msel.append(new Option(`${S.teams.find(t=>t.id===m[0]).name}  vs  ${S.teams.find(t=>t.id===m[1]).name}`,i))); msel.value=mi;
+  msel.onchange=()=>{S.arena.m=+msel.value;save();render()};
+  bar.append(ws,msel,el('span','hint','用該週 NBA 真實賽程算每位球員的場數'));
+  app.append(bar);
   const side=(t,key,col)=>{
     const box=el('div','card ateam'); box.style.borderTop=`3px solid ${col}`;
-    const sel=el('select'); S.teams.forEach(x=>sel.append(new Option(x.name,x.id))); sel.value=t.id;
-    sel.onchange=()=>{S.arena[key]=+sel.value;save();render()};
-    box.append(sel);
+    const ng=t.roster.reduce((n,i)=>n+(byId[i]&&byId[i].GP?gamesOf(byId[i],wk):0),0);
+    box.innerHTML=`<div style="font-weight:700;font-size:17px">${t.name}</div><div class="hint">本週出賽 <b>${Math.round(ng)}</b> 人次</div>`;
     const five=t.roster.map(i=>byId[i]).filter(p=>p&&total(p)!==null).sort((a,b)=>total(b)-total(a)).slice(0,5);
     const row=el('div','five');
     five.forEach(p=>{const d=el('div','pl'); d.innerHTML=`<img src="${HEAD(p.id)}" alt="" loading="lazy" onerror="this.style.opacity=.2">`
@@ -1061,7 +1073,7 @@ function arenaView(app){
     return box;
   };
   const mid=el('div','card vs');
-  const m=matchup(A.roster,B.roster), ca=teamCats(A.roster), cb=teamCats(B.roster), rosters=S.teams.map(t=>t.roster);
+  const m=matchup(A.roster,B.roster,wk), ca=teamCats(A.roster), cb=teamCats(B.roster), rosters=S.teams.map(t=>t.roster);
   // 雷達圖用:各隊原始數據加總,在 12 隊之間 min~max 標準化到 0~1(TO 反向)
   const raw=rosters.map(ids=>teamRaw(ids)), nrm=raw.map(()=>({}));
   RADAR_K.forEach(k=>{const vs=raw.map(t=>t[k]), lo=Math.min(...vs), hi=Math.max(...vs), span=hi-lo||1;
@@ -1071,7 +1083,7 @@ function arenaView(app){
   const wA=Math.round(m.catsA), tie=Math.round(9-m.catsA-m.catsB), wB=Math.max(0,9-wA-tie);   // 先四捨五入藍勝與和局,紅勝補到 9,總和才一定是 9
   const dash=`<span style="color:var(--dim);margin:0 .12em">-</span>`;   // 跟數字同字級,不用 .pos(那是 11px)
   mid.innerHTML=`<div class="big"><span style="color:${colA}">${wA}</span>${dash}<span style="color:${colB}">${wB}</span>${dash}<span style="color:var(--dim)">${tie}</span></div>`
-    +`<div class="sub">單週勝率 <b style="color:${colA}">${pa}%</b> / <b style="color:${colB}">${pb}%</b>(400 次模擬)</div>`
+    +`<div class="sub">Week ${wk} 勝率 <b style="color:${colA}">${pa}%</b> / <b style="color:${colB}">${pb}%</b>(400 次模擬)</div>`
     +radar(nrm[S.teams.indexOf(A)],nrm[S.teams.indexOf(B)],colA,colB);
   const tugs=el('div'); tugs.style.marginTop='10px';
   CATS.forEach(c=>{
@@ -1117,7 +1129,7 @@ function leagueView(app){
   }
 }
 async function fetchLeague(id,yr){
-  const url=`https://lm-api-reads.fantasy.espn.com/apis/v3/games/fba/seasons/${yr}/segments/0/leagues/${id}?view=mTeam&view=mRoster`;
+  const url=`https://lm-api-reads.fantasy.espn.com/apis/v3/games/fba/seasons/${yr}/segments/0/leagues/${id}?view=mTeam&view=mRoster&view=mMatchupScore`;
   const r=await fetch(url);
   if(!r.ok)throw new Error('HTTP '+r.status+(r.status===401?' — 私人聯盟,請先登入 espn.com':''));
   const d=await r.json();
@@ -1126,6 +1138,9 @@ async function fetchLeague(id,yr){
   S.teams=d.teams.sort((a,b)=>a.id-b.id).map(t=>({id:t.id,name:(t.name||`${t.location||''} ${t.nickname||''}`).trim()||('Team '+t.id),
     roster:(t.roster?.entries||[]).map(e=>e.playerId)}));
   S.nTeams=S.teams.length;
+  // 對戰表:每週 6 場 [主, 客](只留例行賽 1~21 週;季後賽還沒配對)
+  S.sched={}; (d.schedule||[]).forEach(m=>{if(m.home&&m.away&&m.matchupPeriodId<=21)(S.sched[m.matchupPeriodId]=S.sched[m.matchupPeriodId]||[]).push([m.home.teamId,m.away.teamId])});
+  S.curWeek=d.status?.currentMatchupPeriod||1;
   S.myTeam=S.teams[S.slot-1]?.id??S.teams[0].id;
   save();
 }
