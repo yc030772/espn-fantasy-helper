@@ -1082,7 +1082,7 @@ function arenaView(app){
   const wA=Math.round(m.catsA), tie=Math.round(9-m.catsA-m.catsB), wB=Math.max(0,9-wA-tie);   // 先四捨五入藍勝與和局,紅勝補到 9,總和才一定是 9
   const dash=`<span style="color:var(--dim);margin:0 .12em">-</span>`;   // 跟數字同字級,不用 .pos(那是 11px)
   mid.innerHTML=`<div class="big"><span style="color:${colA}">${wA}</span>${dash}<span style="color:${colB}">${wB}</span>${dash}<span style="color:var(--dim)">${tie}</span></div>`
-    +`<div class="sub">Week ${wk} 勝率 <b style="color:${colA}">${pa}%</b> / <b style="color:${colB}">${pb}%</b>(400 次模擬)</div>`
+    +`<div class="sub">Week ${wk} 勝率 <b style="color:${colA}">${pa}%</b> / <b style="color:${colB}">${pb}%</b></div>`
     +radar(nrm[S.teams.indexOf(A)],nrm[S.teams.indexOf(B)],colA,colB);
   const ca=raw[S.teams.indexOf(A)], cb=raw[S.teams.indexOf(B)], fmt=(k,v)=>k.endsWith('%')?(100*v).toFixed(1)+'%':Math.round(v);
   const tugs=el('div'); tugs.style.marginTop='10px';
