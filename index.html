@@ -973,11 +973,10 @@ function matchup(a,b,wk,N=400){
 /* 雷達圖:原始數據相加,再在全聯盟 12 隊之間 min~max 標準化到 0~1(TO 反向)。
    每隊 = 13 人場均加總(FG%/FT% 用總命中/總出手),0 = 聯盟最弱、1 = 聯盟最強。 */
 const RADAR_K=['PTS','REB','AST','STL','BLK','3PM','TO','FG%','FT%'];
-function teamRaw(ids){
-  const s={}; RAWK.forEach(k=>s[k]=0); let n=0;
-  ids.forEach(i=>{const p=byId[i]; if(p&&p.GP){n++; RAWK.forEach(k=>s[k]+=p[k]||0)}});
-  // 名單不滿 13 人的隊(例如剛交易完)按比例放大成 13 人,雷達才不會因為人少而全面偏低
-  if(n&&n<13) RAWK.forEach(k=>s[k]*=13/n);
+// 該週預期總數:每人 場均 × 該週場數 × 出賽率(GP/82),13 人相加;FG%/FT% 用總命中/總出手
+function teamWeek(ids,wk){
+  const s={}; RAWK.forEach(k=>s[k]=0);
+  ids.forEach(i=>{const p=byId[i]; if(p&&p.GP){const g=gamesOf(p,wk)*p.GP/82; RAWK.forEach(k=>s[k]+=(p[k]||0)*g)}});
   return {PTS:s.PTS,REB:s.REB,AST:s.AST,STL:s.STL,BLK:s.BLK,'3PM':s['3PM'],TO:s.TO,'FG%':s.FGA?s.FGM/s.FGA:0,'FT%':s.FTA?s.FTM/s.FTA:0};
 }
 function radar(nA,nB,colA,colB){
@@ -992,7 +991,7 @@ function radar(nA,nB,colA,colB){
   const labels=RADAR_K.map((k,i)=>{const x=cx+(R+22)*Math.cos(ang(i)), y=cy+(R+22)*Math.sin(ang(i));
     return `<text x="${x}" y="${y+4}" text-anchor="middle" font-size="11" font-weight="600" fill="var(--fg)">${k}</text>`});
   return `<svg viewBox="0 0 260 262" style="width:100%;max-width:300px;display:block;margin:0 auto">${ring(.25)}${ring(.5)}${ring(.75)}${ring(1)}${spokes}${poly(nB,colB)}${poly(nA,colA)}${labels.join('')}</svg>
-  <div class="hint" style="text-align:center;margin-top:2px">雷達 = 13 人場均加總(不滿 13 人按比例換算),在全聯盟 12 隊之間標準化:半徑一半 = 聯盟最弱,外圈 = 聯盟最強,TO 反向</div>`;
+  <div class="hint" style="text-align:center;margin-top:2px">雷達 = 該週預期總數(場均 × 該週場數 × 出賽率),在全聯盟 12 隊之間標準化:半徑一半 = 該週聯盟最弱,外圈 = 最強,TO 反向</div>`;
 }
 function courtSVG(colA,colB){
   const W=1200,H=520;
@@ -1073,9 +1072,9 @@ function arenaView(app){
     return box;
   };
   const mid=el('div','card vs');
-  const m=matchup(A.roster,B.roster,wk), ca=teamCats(A.roster), cb=teamCats(B.roster), rosters=S.teams.map(t=>t.roster);
+  const m=matchup(A.roster,B.roster,wk), rosters=S.teams.map(t=>t.roster);
   // 雷達圖用:各隊原始數據加總,在 12 隊之間 min~max 標準化到 0~1(TO 反向)
-  const raw=rosters.map(ids=>teamRaw(ids)), nrm=raw.map(()=>({}));
+  const raw=rosters.map(ids=>teamWeek(ids,wk)), nrm=raw.map(()=>({}));
   RADAR_K.forEach(k=>{const vs=raw.map(t=>t[k]), lo=Math.min(...vs), hi=Math.max(...vs), span=hi-lo||1;
     raw.forEach((t,i)=>nrm[i][k]=k==='TO'?(hi-t[k])/span:(t[k]-lo)/span)});
   const pa=Math.round(100*m.pA), pb=Math.round(100*m.pB);
@@ -1085,21 +1084,22 @@ function arenaView(app){
   mid.innerHTML=`<div class="big"><span style="color:${colA}">${wA}</span>${dash}<span style="color:${colB}">${wB}</span>${dash}<span style="color:var(--dim)">${tie}</span></div>`
     +`<div class="sub">Week ${wk} 勝率 <b style="color:${colA}">${pa}%</b> / <b style="color:${colB}">${pb}%</b>(400 次模擬)</div>`
     +radar(nrm[S.teams.indexOf(A)],nrm[S.teams.indexOf(B)],colA,colB);
+  const ca=raw[S.teams.indexOf(A)], cb=raw[S.teams.indexOf(B)], fmt=(k,v)=>k.endsWith('%')?(100*v).toFixed(1)+'%':Math.round(v);
   const tugs=el('div'); tugs.style.marginTop='10px';
   CATS.forEach(c=>{
     const k=LBL[c], p=m.cw[k]??m.cw[c], l=Math.round(100*p), r=100-l;   // l = A 贏該類別的機率
     // 只畫贏家那一側:從中線往贏家方向長,長度 = 領先幅度(50% 平手 = 空,100% = 填滿半邊),顏色 = 贏家隊色
     const aWin=l>r, lead=Math.abs(l-50)/50*50;
     const row=el('div','tug');
-    row.innerHTML=`<span class="l" style="color:${colA};font-weight:${aWin?700:400};opacity:${aWin?1:.6}">${ca[c].toFixed(1)}</span>`
+    row.innerHTML=`<span class="l" style="color:${colA};font-weight:${aWin?700:400};opacity:${aWin?1:.6}">${fmt(k,ca[k])}</span>`
       +`<span class="k">${k}</span>`
       +`<div class="tbar">${aWin?`<i class="fl" style="width:${lead}%;background:${colA}"></i>`:l===r?'':`<i class="fr" style="width:${lead}%;background:${colB}"></i>`}<i class="mid"></i>`
       +`<span class="pl ${aWin?'win':''}">${l}%</span><span class="pr ${!aWin&&l!==r?'win':''}">${r}%</span></div>`
-      +`<span style="color:${colB};font-weight:${!aWin&&l!==r?700:400};opacity:${!aWin&&l!==r?1:.6}">${cb[c].toFixed(1)}</span>`;
+      +`<span style="color:${colB};font-weight:${!aWin&&l!==r?700:400};opacity:${!aWin&&l!==r?1:.6}">${fmt(k,cb[k])}</span>`;
     tugs.append(row);
   });
   mid.append(tugs);
-  mid.append(el('p','hint','左右數字 = 該隊該類別的加權 z 總和;條的長度 = 贏該類別的機率。'));
+  mid.append(el('p','hint','左右數字 = 該隊該週預期總數(場均 × 場數 × 出賽率);條的長度 = 贏該類別的機率。'));
   const grid=el('div','arena'); grid.innerHTML=courtSVG(colA,colB); grid.append(side(A,'a',colA),mid,side(B,'b',colB)); app.append(grid);
 }
 
