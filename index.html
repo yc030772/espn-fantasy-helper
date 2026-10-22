@@ -208,7 +208,7 @@ function auctionValues(){
   const sum=top.reduce((s,p)=>s+total(p)-repl,0)||1;
   const v={};
   top.forEach(p=>v[p.id]=1+(total(p)-repl)/sum*pot);
-  P.forEach(p=>{if(p.auction)v[p.id]=v[p.id]?(v[p.id]+p.auction)/2:p.auction});
+  if(!PTS())P.forEach(p=>{if(p.auction)v[p.id]=v[p.id]?(v[p.id]+p.auction)/2:p.auction});   // ESPN 的 $ 是 9-cat 的,points 聯盟不混
   const open=N-S.picks.length;
   const money=[...Array(S.nTeams).keys()].reduce((s,t)=>s+moneyLeft(t),0)-open;
   const rest=P.filter(p=>v[p.id]&&!S.picks.includes(p.id)).map(p=>v[p.id]-1)
@@ -240,7 +240,9 @@ const reliab=p=>(p.GP/(p.GP+10))/(70/80);
 const durability=p=>S.gp?Math.min(1,(p.GP+8)/70):1;
 // 無數據的人給 0(未知),不是負分 —— 沒資料不等於很爛
 const catZ=(p,c)=>noData(p)?0:p['z'+c]*Math.min(1,reliab(p))*durability(p);
-const total=p=>noData(p)?null:CATS.reduce((s,c)=>s+S.w[c]*catZ(p,c),0);   // 加權總分
+const PTS=()=>!!S.ptsW;   // H2H Points 聯盟
+const fpg=p=>Object.entries(S.ptsW).reduce((s,[k,w])=>s+w*(p[k]||0),0);   // 該聯盟計分的每場 fantasy 分
+const total=p=>noData(p)?null:PTS()?fpg(p)*Math.min(1,reliab(p))*durability(p):CATS.reduce((s,c)=>s+S.w[c]*catZ(p,c),0);   // 加權總分 / points 模式 = FP/場
 const totalOr=(p,d=-99)=>{const v=total(p);return v===null?d:v};
 const hasAdp=p=>p.adp&&p.adp<140;   // 140 = ESPN 未排名的預設值
 /* 排序依據。回測 312 人:ESPN 排名對「下一季實際 9-cat 表現」的 Spearman
@@ -651,7 +653,7 @@ function redrawDraft(){
     .filter(p=>p.name.toLowerCase().includes(q)&&(pf==='全部'||p.pos===pf));
   const rec=recSet([...pool].filter(p=>p.mrank).sort((a,b)=>a.mrank-b.mrank).slice(0,120),S.mine);
   const cz=(p,c)=>noData(p)?null:S.w[c]*catZ(p,c);
-  const cols=[
+  const cols0=[
     // 欄位 1、2:兩套排序
     {h:'ESPN 排序',k:'espn',v:p=>p.espn_rank||null,
      f:p=>p.espn_rank?`<b>${p.espn_rank}</b>`
@@ -659,19 +661,29 @@ function redrawDraft(){
     {h:'總分',k:'total',desc:1,v:p=>total(p),f:p=>hot(total(p))},
     {h:'補洞',k:'fit',desc:1,v:p=>S.mine.length&&!noData(p)?fit(p,w):null,
      f:p=>S.mine.length&&!noData(p)?fit(p,w).toFixed(1):'-'},
-  ].concat(CATS.map(c=>({h:LBL[c],k:c,desc:1,v:p=>cz(p,c),
+  ]; const cols=cols0.concat(CATS.map(c=>({h:LBL[c],k:c,desc:1,v:p=>cz(p,c),
      f:p=>{const v=cz(p,c);return v===null?'<span class="pos">–</span>'
        :`<span style="color:${heat(v*2.2)}">${v.toFixed(1)}</span>`}})))
    .concat([
     {h:'$',k:'auction',desc:1,v:p=>p.auction||null,
      f:p=>p.auction?`<span style="color:var(--warn)">$${p.auction}</span>`:'-'},
   ]);
+  if(PTS()){   // points 聯盟:FP/場 + 原始場均,不看 9-cat 的 z 與 ESPN $
+    const raw=[['PTS','PTS'],['REB','REB'],['AST','AST'],['STL','STL'],['BLK','BLK'],['3PM','3PM'],['TO','TO']];
+    cols.length=0;
+    cols.push(cols0[0],
+      {h:'FP/場',k:'total',desc:1,v:p=>noData(p)?null:fpg(p),f:p=>noData(p)?'<span class="pos">–</span>':`<b style="color:${heat((fpg(p)-32)/3)}">${fpg(p).toFixed(1)}</b>`},
+      {h:'GP',k:'GP',desc:1,v:p=>p.GP||null,f:p=>p.GP?Math.round(p.GP):'-'},
+      ...raw.map(([h,k])=>({h,k,desc:1,v:p=>noData(p)?null:p[k],f:p=>noData(p)?'–':p[k].toFixed(1)})),
+      {h:'FG%',k:'fg',desc:1,v:p=>p.FGA?p.FGM/p.FGA:null,f:p=>p.FGA?(100*p.FGM/p.FGA).toFixed(0):'-'},
+      {h:'FT%',k:'ft',desc:1,v:p=>p.FTA?p.FTM/p.FTA:null,f:p=>p.FTA?(100*p.FTM/p.FTA).toFixed(0):'-'});
+  }
   {
     const my=maxBid(S.slot-1);
     cols.unshift({h:'建議 $',k:'bid',desc:1,v:p=>bid(p),f:p=>{const b=bid(p);
       return b===null?'-':`<b style="color:${b>my?'var(--bad)':'var(--good)'}" title="${b>my?'超過你最高可出的 $'+my:''}">$${b}</b>`}});
     // ESPN 今年實際拍賣的平均成交價 = 市場行情。比建議價高很多 = 大家愛喊;低很多 = 可能撿便宜
-    cols.splice(1,0,{h:'成交均價',k:'avg_paid',desc:1,v:p=>p.avg_paid||null,f:p=>{const a=p.avg_paid,b=bid(p);
+    if(!PTS())cols.splice(1,0,{h:'成交均價',k:'avg_paid',desc:1,v:p=>p.avg_paid||null,f:p=>{const a=p.avg_paid,b=bid(p);
       return a?`<span style="color:${b&&a>b+5?'var(--bad)':b&&a<b-5?'var(--good)':'inherit'}">$${Math.round(a)}</span>`:'-'}});
   }
   pool=sortList(pool,cols,S.dsort);
@@ -1158,7 +1170,7 @@ function leagueView(app){
   }
 }
 async function fetchLeague(id,yr){
-  const url=`https://lm-api-reads.fantasy.espn.com/apis/v3/games/fba/seasons/${yr}/segments/0/leagues/${id}?view=mTeam&view=mRoster&view=mMatchupScore&view=mMatchup`;
+  const url=`https://lm-api-reads.fantasy.espn.com/apis/v3/games/fba/seasons/${yr}/segments/0/leagues/${id}?view=mTeam&view=mRoster&view=mMatchupScore&view=mMatchup&view=mSettings`;
   const r=await fetch(url);
   if(!r.ok)throw new Error('HTTP '+r.status+(r.status===401?' — 私人聯盟,請先登入 espn.com':''));
   const d=await r.json();
@@ -1167,6 +1179,14 @@ async function fetchLeague(id,yr){
   S.teams=d.teams.sort((a,b)=>a.id-b.id).map(t=>({id:t.id,name:(t.name||`${t.location||''} ${t.nickname||''}`).trim()||('Team '+t.id),
     roster:(t.roster?.entries||[]).map(e=>e.playerId)}));
   S.nTeams=S.teams.length;
+  // H2H Points 聯盟:記下每項的分數,排名改用 FP/場(見 fpg/total)
+  const sc=d.settings?.scoringSettings;
+  if(sc?.scoringType==='H2H_POINTS'){const SID={0:'PTS',1:'BLK',2:'STL',3:'AST',6:'REB',11:'TO',13:'FGM',14:'FGA',15:'FTM',16:'FTA',17:'3PM'};
+    if(!S.ptsW)S.gp=true;   // points 聯盟比的是每週總分,出賽數很重要,預設打開折算
+    S.ptsW={}; sc.scoringItems.forEach(i=>{if(SID[i.statId])S.ptsW[SID[i.statId]]=i.points});
+    if(d.settings.draftSettings?.auctionBudget)S.budget=d.settings.draftSettings.auctionBudget;
+    const ls=d.settings.rosterSettings?.lineupSlotCounts; if(ls)S.rsize=Object.entries(ls).reduce((n,[k,v])=>n+(k==='13'?0:v),0);   // 每隊人數跟著 ESPN 名單設定(不含 IR)
+  } else delete S.ptsW;
   // 對戰表:每週 6 場 [主, 客](只留例行賽 1~21 週;季後賽還沒配對)
   S.sched={}; (d.schedule||[]).forEach(m=>{if(m.home&&m.away&&m.matchupPeriodId<=21)(S.sched[m.matchupPeriodId]=S.sched[m.matchupPeriodId]||[]).push([m.home.teamId,m.away.teamId])});
   S.curWeek=d.status?.currentMatchupPeriod||1;
