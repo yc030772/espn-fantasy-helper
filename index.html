@@ -852,7 +852,7 @@ function tradeView(app){
     team.roster.forEach(id=>{
       const p=byId[id]; if(!p)return;
       const t=el('span','tag'+(S.tsel[key].includes(id)?' sel':''),
-        `${logo(p)}${p.name} ${posBadge(p)} <span class="pos">${total(p).toFixed(1)}</span>`);
+        `${logo(p)}${p.name} ${posBadge(p)} <span class="pos">${total(p)===null?"–":total(p).toFixed(1)}</span>`);
       t.style.borderLeftColor=tm(p).color;
       t.onclick=()=>{S.tsel[key]=S.tsel[key].includes(id)?S.tsel[key].filter(x=>x!==id):[...S.tsel[key],id];save();render()};
       c.append(t);
