@@ -1,9 +1,10 @@
 // ==UserScript==
 // @name         ESPN 拍賣選秀 → Fantasy 助手
 // @namespace    fantasy-helper
-// @version      1.5
+// @version      1.6
 // @description  讀 ESPN 選秀室右側 Picks 清單(誰用多少錢買走誰),即時同步到本機的 Fantasy 助手
 // @match        https://fantasy.espn.com/basketball/draft*
+// @match        https://yc030772.github.io/*
 // @match        http://localhost:*/*
 // @match        http://127.0.0.1:*/*
 // @grant        GM_setValue

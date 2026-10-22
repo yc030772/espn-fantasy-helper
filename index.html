@@ -162,8 +162,11 @@ const PRESETS={
 };
 const LBL={PTS:'PTS',REB:'REB',AST:'AST',STL:'STL',BLK:'BLK','3PM':'3PM',TO:'TO',FG_imp:'FG%',FT_imp:'FT%'};
 const $=s=>document.querySelector(s), el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e};
-const S=JSON.parse(localStorage.getItem('fbb')||'{}');
-const save=()=>localStorage.setItem('fbb',JSON.stringify(S));
+// 第二個聯盟:?league=ID 用另一份 localStorage,不跟主聯盟的狀態混在一起;首次開啟可帶 &teams=8&budget=210&size=14
+const Q=new URLSearchParams(location.search), LG=Q.get('league'), SKEY=LG?'fbb:'+LG:'fbb';
+const S=JSON.parse(localStorage.getItem(SKEY)||'{}');
+const save=()=>localStorage.setItem(SKEY,JSON.stringify(S));
+if(LG&&!S.leagueId){S.leagueId=LG; S.nTeams=+Q.get('teams')||8; S.budget=+Q.get('budget')||200; S.rsize=+Q.get('size')||13}
 S.picks=S.picks||[]; S.nTeams=S.nTeams||12; S.slot=S.slot||1;
 // 拍賣模式:owner[i]/price[i] 與 picks[i] 平行,第 i 個成交的人歸誰、花多少
 S.owner=S.owner||[]; S.price=S.price||[];
@@ -181,7 +184,7 @@ let P=[], byId={}, T={}, WK={}, DATES={}, tab='arena';   // WK = 每個對戰週
 if(location.search.includes('draft')){tab='draft';document.querySelector('[data-t=draft]').hidden=false;document.querySelector('[data-t=arena]').classList.remove('on');document.querySelector('[data-t=draft]').classList.add('on')}
 const teamOf=i=>S.owner[i];
 const rosterOf=t=>S.picks.filter((_,i)=>teamOf(i)===t);
-const realName=t=>S.teams&&S.teams[t]?S.teams[t].name:`Team ${t+1}`;
+const realName=t=>S.teams&&S.teams[t]?S.teams[t].name:(S.names||[])[t]||`Team ${t+1}`;   // 私人聯盟抓不到隊名時用手打的 S.names
 // 我方顯示「me (真實隊名)」:打 me 或打自己隊名都找得到,也看得出 me 對到哪一隊
 const teamName=t=>t===S.slot-1?`me (${realName(t)})`:realName(t);
 /* --- 拍賣 --- */
@@ -458,6 +461,11 @@ function draftView(app){
   ms.value=S.slot; ms.onchange=()=>{S.slot=+ms.value;if(S.teams)S.myTeam=S.teams[S.slot-1].id;save();render()};
   me.append(ms); line.append(me);
   draftAuctionBar(line,mk);
+  if(!S.teams){   // 私人聯盟:手打隊名(照 ESPN 選秀室順序,逗號分隔),ESPN 同步靠隊名對人
+    const ni=Object.assign(document.createElement('input'),{type:'text',placeholder:'隊名,逗號分隔(照 ESPN 順序)',value:(S.names||[]).join(', ')});
+    ni.style.width='420px'; ni.onchange=()=>{S.names=ni.value.split(/[,、，]/).map(x=>x.trim()).filter(Boolean);save();render()};
+    line.append(ni);
+  }
 
   const un=el('button','act','復原上一手'); un.onclick=()=>{S.picks.pop();S.owner.pop();S.price.pop();save();render()};
   const rs=el('button','act','重置選秀'); rs.onclick=()=>{if(confirm('清空整個選秀板?')){S.picks=[];S.owner=[];S.price=[];save();render()}};
