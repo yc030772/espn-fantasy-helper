@@ -924,7 +924,7 @@ function tradeView(app){
 /* ---------- FA ---------- */
 function faView(app){
   if(!S.teams){app.append(el('div','card','<h2>FA 推薦</h2><p class="hint">先到「連結聯盟」輸入 League ID。</p>'));return}
-  const owned=new Set(S.teams.flatMap(t=>t.roster));
+  const owned=new Set(S.teams.flatMap(t=>t.roster.concat(t.ir||[])));
   const my=S.teams.find(t=>t.id===S.myTeam).roster;
   const rosters=S.teams.map(t=>t.roster), meIdx=S.teams.findIndex(t=>t.id===S.myTeam);
   const rk=leagueRanks(rosters,meIdx), w=edgeWeights(rosters,meIdx);
