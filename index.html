@@ -1094,6 +1094,9 @@ function arenaView(app){
     const rest=all.filter(p=>!five.includes(p)); const rg=el('div','rest');
     rest.forEach(p=>{const d=el('div','pl'); d.innerHTML=`<img src="${HEAD(p.id)}" alt="" loading="lazy" onerror="this.style.opacity=.2">`
       +`<div class="nm" title="${p.name}">${lastName(p)}</div><div class="sc">${total(p)===null?'–':total(p).toFixed(1)}</div>`; rg.append(d)});
+    // IR 的人:灰掉放最後,不算分
+    (t.ir||[]).map(i=>byId[i]).filter(Boolean).forEach(p=>{const d=el('div','pl'); d.style.opacity='.35';
+      d.innerHTML=`<img src="${HEAD(p.id)}" alt="" loading="lazy" onerror="this.style.opacity=.2"><div class="nm" title="${p.name} · IR 不算分">${lastName(p)}</div><div class="sc">IR</div>`; rg.append(d)});
     box.append(rg);
     // 隊徽:每個隊員一個,依球隊主色的色相排(彩虹序),同隊自然相鄰;固定等寬格子排成一列
     const byTeam=[...all].sort((a,b)=>hueKey(teamColor(a))-hueKey(teamColor(b))||tm(a).abbr.localeCompare(tm(b).abbr));
@@ -1177,7 +1180,8 @@ async function fetchLeague(id,yr){
   S.leagueId=id; S.year=yr;
   // 依 team id 排序,選秀頁的第 t 隊 = S.teams[t]
   S.teams=d.teams.sort((a,b)=>a.id-b.id).map(t=>({id:t.id,name:(t.name||`${t.location||''} ${t.nickname||''}`).trim()||('Team '+t.id),
-    roster:(t.roster?.entries||[]).map(e=>e.playerId)}));
+    roster:(t.roster?.entries||[]).filter(e=>e.lineupSlotId!==13).map(e=>e.playerId),   // IR(slot 13)的人不算分
+    ir:(t.roster?.entries||[]).filter(e=>e.lineupSlotId===13).map(e=>e.playerId)}));
   S.nTeams=S.teams.length;
   // H2H Points 聯盟:記下每項的分數,排名改用 FP/場(見 fpg/total)
   const sc=d.settings?.scoringSettings;
