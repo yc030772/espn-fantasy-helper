@@ -1236,7 +1236,7 @@ async function fetchLeague(id,yr){
   S.curWeek=d.status?.currentMatchupPeriod||1;
   // 本週即時比數:每隊目前各項累積(ESPN statId → 我們的欄位),算到今天為止
   const SID={0:'PTS',1:'BLK',2:'STL',3:'AST',6:'REB',11:'TO',13:'FGM',14:'FGA',15:'FTM',16:'FTA',17:'3PM'};
-  S.live={}; (d.schedule||[]).forEach(m=>{if(m.matchupPeriodId!==S.curWeek)return; ['home','away'].forEach(h=>{const sb=m[h]?.cumulativeScore?.scoreByStat; if(!sb)return;
+  S.live={}; (d.schedule||[]).forEach(m=>{if(m.matchupPeriodId!==S.curWeek)return; ['home','away'].forEach(h=>{const sb=m[h]?.cumulativeScoreLive?.scoreByStat||m[h]?.cumulativeScore?.scoreByStat;   /* Live 含今天已打完的比賽,cumulativeScore 要隔天才更新 */ if(!sb)return;
     const o={}; RAWK.forEach(k=>o[k]=0); Object.entries(sb).forEach(([id,v])=>{if(SID[id])o[SID[id]]=v.score||0}); S.live[m[h].teamId]=o})});
   S.liveDate=new Date().toISOString().slice(0,10);
   S.myTeam=S.teams[S.slot-1]?.id??S.teams[0].id;
