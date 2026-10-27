@@ -270,7 +270,7 @@ fetch('data.json',{cache:'no-cache'}).then(r=>r.json()).then(d=>{
   $('#src').innerHTML=`${P.length} 名球員 · 數據 ${P[0]?.source||'2025-26 實際'} · 排名/ADP 2026-27`;
   render();
   fetchLeague(S.leagueId||'829293495',S.year||'2027').then(render).catch(()=>{});   // 開頁一定重抓:隊名與名單會因交易改變,不能用舊快取
-  fetchActual(S.leagueId||'829293495',S.year||'2027').then(()=>{if(tab==='fa')render()}).catch(()=>{});
+  fetchActual(S.leagueId||'829293495',S.year||'2027').then(()=>{applyActual();render()}).catch(()=>{});
 });
 
 /* ---------- ESPN 選秀室同步(espn-draft-sync.user.js 送來的 Picks 清單) ----------
@@ -380,7 +380,8 @@ function fixedCols(rec){return [
    f:p=>`${logo(p)}<span>${p.name}</span>`
      +`${rec&&rec.has(p.id)?'<span class="rechip">建議</span>':''}`
      +`${noData(p)?'<span class="pill nodata">新秀/無數據</span>'
-        :thin(p)?`<span class="pill">去年僅 ${p.GP} 場</span>`:''}`
+        :thin(p)?`<span class="pill">本季僅 ${p.aGP||p.GP} 場</span>`:''}`
+     +`${p.source==='本季實際'||!Object.keys(ACT).length?'':'<span class="pill">本季未出賽(投影)</span>'}`
      +`${p.injury&&p.injury!=='ACTIVE'?`<span class="pill">${p.injury}</span>`:''}`},
   {h:'隊',k:'team',l:1,v:p=>tm(p).abbr,f:p=>abbrChip(p)},
   {h:'POS',k:'pos',l:1,v:p=>p.pos,f:p=>posBadge(p)},
@@ -1186,6 +1187,22 @@ async function fetchActual(id,yr){
   ACT={};
   (await r.json()).players.forEach(e=>{const st=(e.player.stats||[]).find(x=>x.id==='00'+yr); if(!st||!st.averageStats)return;
     const o={GP:st.stats?.['42']||0}; Object.entries(st.averageStats).forEach(([k,v])=>{if(SID[k])o[SID[k]]=v}); ACT[e.player.id]=o});
+}
+/* 全站改用本季實際場均:把每個人的場均換成 ESPN 本季數據,再用 rank.py 同一套方法重算 z 與總分。
+   GP 保留投影值(那是「整季預計出賽數」,模擬與可靠度用),本季場次另存 aGP。
+   本季還沒上場的人(受傷)留投影,並標「本季未出賽」。基準 = 本季出賽 >= 3 場的人。 */
+function applyActual(){
+  const KEYS=['PTS','REB','AST','STL','BLK','3PM','TO','FGM','FGA','FTM','FTA','MIN'];
+  let n=0, maxGP=0;
+  P.forEach(p=>{const a=ACT[p.id]; p.aGP=a?a.GP:0; if(!a||!a.GP)return; n++; maxGP=Math.max(maxGP,a.GP);
+    KEYS.forEach(k=>p[k]=a[k]||0); p.sample=a.GP>=3?'ok':'thin'; p.source='本季實際'});
+  const ref=P.filter(p=>p.aGP>=3), Z=['PTS','REB','AST','STL','BLK','3PM','TO','FG_imp','FT_imp'];
+  const fg=ref.reduce((s,p)=>s+p.FGM,0)/Math.max(1,ref.reduce((s,p)=>s+p.FGA,0)), ft=ref.reduce((s,p)=>s+p.FTM,0)/Math.max(1,ref.reduce((s,p)=>s+p.FTA,0));
+  P.forEach(p=>{p.FG_imp=p.FGA?p.FGA*(p.FGM/p.FGA-fg):0; p.FT_imp=p.FTA?p.FTA*(p.FTM/p.FTA-ft):0});
+  Z.forEach(c=>{const v=ref.map(p=>p[c]), m=v.reduce((s,x)=>s+x,0)/v.length, sd=Math.sqrt(v.reduce((s,x)=>s+(x-m)**2,0)/v.length)||1;
+    P.forEach(p=>p['z'+c]=(c==='TO'?-1:1)*(p[c]-m)/sd)});
+  P.forEach(p=>p.score=Z.reduce((s,c)=>s+(PRESETS['均衡(建議)'][c]||0)*p['z'+c],0));
+  $('#src').innerHTML=`${P.length} 名球員 · 數據 <b>2026-27 本季實際</b>(${n} 人已出賽,最多 ${maxGP} 場;未出賽者用投影)· 排名/ADP 2026-27`;
 }
 async function fetchLeague(id,yr){
   const url=`https://lm-api-reads.fantasy.espn.com/apis/v3/games/fba/seasons/${yr}/segments/0/leagues/${id}?view=mTeam&view=mRoster&view=mMatchupScore&view=mMatchup&view=mSettings`;
