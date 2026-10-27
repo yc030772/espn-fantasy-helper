@@ -180,7 +180,7 @@ S.asort=S.asort||{k:'total',dir:-1};  // 總分表
 if(S.gp===undefined)S.gp=false;   // 出賽數折算預設關,見 durability()
 S.mine=[]; S.gone=[];   // 由 picks 推導,見 syncDraft()
 S.w=S.w||{...PRESETS['均衡(建議)']}; S.preset=S.preset||'均衡(建議)';
-let P=[], byId={}, T={}, WK={}, DATES={}, tab='arena';   // WK = 每個對戰週各 NBA 球隊的出賽場數(data.json weeks)
+let P=[], byId={}, T={}, WK={}, DATES={}, ACT={}, tab='arena';   // ACT = 本季實際場均(ESPN kona_player_info)   // WK = 每個對戰週各 NBA 球隊的出賽場數(data.json weeks)
 if(location.search.includes('draft')){tab='draft';document.querySelector('[data-t=draft]').hidden=false;document.querySelector('[data-t=arena]').classList.remove('on');document.querySelector('[data-t=draft]').classList.add('on')}
 const teamOf=i=>S.owner[i];
 const rosterOf=t=>S.picks.filter((_,i)=>teamOf(i)===t);
@@ -270,6 +270,7 @@ fetch('data.json',{cache:'no-cache'}).then(r=>r.json()).then(d=>{
   $('#src').innerHTML=`${P.length} 名球員 · 數據 ${P[0]?.source||'2025-26 實際'} · 排名/ADP 2026-27`;
   render();
   fetchLeague(S.leagueId||'829293495',S.year||'2027').then(render).catch(()=>{});   // 開頁一定重抓:隊名與名單會因交易改變,不能用舊快取
+  fetchActual(S.leagueId||'829293495',S.year||'2027').then(()=>{if(tab==='fa')render()}).catch(()=>{});
 });
 
 /* ---------- ESPN 選秀室同步(espn-draft-sync.user.js 送來的 Picks 清單) ----------
@@ -943,10 +944,14 @@ function faView(app){
   right.append(el('h2',null,'考慮 drop(總分最低)'));
   worst.forEach(i=>right.append(el('p','hint',`${byId[i].name} <span class="pos">${byId[i].pos}</span> · 總分 ${hot(total(byId[i]))}`)));
   left.append(el('h2',null,`可撿的自由球員 (${fa.length} 人)`));
+  // 本季實際場均(ESPN 到今天),可排序;總分/補洞/建議仍用投影
+  const A=p=>ACT[p.id], ac=(h,k,d=1)=>({h,k:'a'+k,desc:1,v:p=>A(p)&&A(p).GP?A(p)[k]:null,f:p=>A(p)&&A(p).GP?A(p)[k].toFixed(d):'<span class="pos">–</span>'});
+  const apct=(h,m,a)=>({h,k:'a'+h,desc:1,v:p=>A(p)&&A(p)[a]?A(p)[m]/A(p)[a]:null,f:p=>A(p)&&A(p)[a]?(100*A(p)[m]/A(p)[a]).toFixed(0):'<span class="pos">–</span>'});
   const fcols=[{h:'總分',k:'total',desc:1,v:p=>total(p),f:p=>hot(total(p))},
     {h:'補洞',k:'fit',desc:1,v:p=>noData(p)?null:fit(p,w),f:p=>noData(p)?'-':fit(p,w).toFixed(1)},
-    {h:'ESPN',k:'espn',v:p=>p.espn_rank||null,f:p=>p.espn_rank||'-'},
-    {h:'補到',f:p=>noData(p)?'-':CATS.map(c=>[c,catZ(p,c)]).sort((a,b)=>b[1]-a[1]).slice(0,2).map(x=>LBL[x[0]]).join(' ')}];
+    {h:'補到',f:p=>noData(p)?'-':CATS.map(c=>[c,catZ(p,c)]).sort((a,b)=>b[1]-a[1]).slice(0,2).map(x=>LBL[x[0]]).join(' ')},
+    ac('本季GP','GP',0),ac('MIN','MIN'),ac('PTS','PTS'),ac('REB','REB'),ac('AST','AST'),ac('STL','STL'),ac('BLK','BLK'),ac('3PM','3PM'),ac('TO','TO'),apct('FG%','FGM','FGA'),apct('FT%','FTM','FTA')];
+  if(!Object.keys(ACT).length)left.append(el('p','hint','本季實際數據載入中…'));
   fa=sortList(fa,fcols,S.fsort);
   left.append(playerTable(fa.slice(0,120),fcols,null,
     c=>{toggleSort(S.fsort,c);save();render()},rec,S.fsort));
@@ -1171,6 +1176,16 @@ function leagueView(app){
     // 各隊 × 各類別對照表先藏起來(網址加 ?matrix 可叫回來)
     if(location.search.includes('matrix')) app.append(standingsTable(S.teams.map(t=>t.roster)));
   }
+}
+// 本季實際場均:ESPN 的 00{yr} 是季初到今天的平均;全部球員一次抓(自訂 header 會觸發 CORS 預檢,ESPN 有開)
+async function fetchActual(id,yr){
+  const url=`https://lm-api-reads.fantasy.espn.com/apis/v3/games/fba/seasons/${yr}/segments/0/leagues/${id}?view=kona_player_info`;
+  const r=await fetch(url,{headers:{'X-Fantasy-Filter':JSON.stringify({players:{limit:800,sortPercOwned:{sortPriority:1,sortAsc:false}}})}});
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  const SID={0:'PTS',1:'BLK',2:'STL',3:'AST',6:'REB',11:'TO',13:'FGM',14:'FGA',15:'FTM',16:'FTA',17:'3PM',40:'MIN'};
+  ACT={};
+  (await r.json()).players.forEach(e=>{const st=(e.player.stats||[]).find(x=>x.id==='00'+yr); if(!st||!st.averageStats)return;
+    const o={GP:st.stats?.['42']||0}; Object.entries(st.averageStats).forEach(([k,v])=>{if(SID[k])o[SID[k]]=v}); ACT[e.player.id]=o});
 }
 async function fetchLeague(id,yr){
   const url=`https://lm-api-reads.fantasy.espn.com/apis/v3/games/fba/seasons/${yr}/segments/0/leagues/${id}?view=mTeam&view=mRoster&view=mMatchupScore&view=mMatchup&view=mSettings`;
