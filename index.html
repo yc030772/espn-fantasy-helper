@@ -901,21 +901,29 @@ function tradeView(app){
   res.append(catBars(d,Math.max(1.5,Math.max(...CATS.map(c=>Math.abs(d[c]))))));
   app.append(res);
 
-  // 自動推薦 1 對 1
+  // 整季觀點:換完之後對全聯盟其他 11 隊各贏幾類(每週預期總量直接比),平均類別數與「贏過半的隊數」
+  const others=S.teams.filter(t=>t.id!==S.myTeam&&t.id!==S.oppTeam).map(t=>teamWeek(t.roster,0));
+  const lg=(mine,oppR)=>{const m=teamWeek(mine,0), os=others.concat([teamWeek(oppR,0)]); let cats=0,beat=0;
+    os.forEach(o=>{let c=0; SIMK.forEach(k=>{if(k==='TO'?m[k]<o[k]:m[k]>o[k])c++}); cats+=c; if(c>=5)beat++});
+    return {cats:cats/os.length,beat}};
+  const L0=lg(mineNow,oppNow), L1=lg(mineAfter,oppAfter);
+  res.append(el('p','hint',`整季觀點(對其他 11 隊):平均贏 <b>${L0.cats.toFixed(1)}</b> → <b style="color:${L1.cats>L0.cats?'var(--good)':L1.cats<L0.cats?'var(--bad)':'inherit'}">${L1.cats.toFixed(1)}</b> 類 · 贏過半的隊 <b>${L0.beat}</b> → <b>${L1.beat}</b> / 11`));
+  // 自動推薦 1 對 1:用整季觀點排序,不只看跟交易對象的勝負
   const w=weights(mineNow), sug=[];
   mineNow.forEach(o=>oppNow.forEach(i=>{
     if(!byId[o]||!byId[i])return;
-    const after=wins(mineNow.filter(x=>x!==o).concat(i),oppNow.filter(x=>x!==i).concat(o));
+    const mA=mineNow.filter(x=>x!==o).concat(i), oA=oppNow.filter(x=>x!==i).concat(o);
+    const after=wins(mA,oA), L=lg(mA,oA);
     const bal=total(byId[i])-total(byId[o]);
-    if(after>w0&&bal<1.5) sug.push({o,i,after,gain:fit(byId[i],w)-fit(byId[o],w),bal});
+    if(L.cats>L0.cats&&bal<1.5) sug.push({o,i,after,L,gain:L.cats-L0.cats,bal});
   }));
-  sug.sort((a,b)=>b.after-a.after||b.gain-a.gain);
+  sug.sort((a,b)=>b.gain-a.gain||b.after-a.after);
   const sc=el('div','card'); sc.style.marginTop='12px';
-  sc.append(el('h2',null,'自動推薦 1 換 1'));
-  if(!sug.length)sc.append(el('p','hint','沒有找到能翻盤又不至於明顯虧價值的 1 換 1。試試 2 換 1,或換個對手。'));
+  sc.append(el('h2',null,'自動推薦 1 換 1(依整季對 11 隊的平均類別勝數排序)'));
+  if(!sug.length)sc.append(el('p','hint','沒有找到整季能加分又不至於明顯虧價值的 1 換 1。試試 2 換 1,或換個對手。'));
   sug.slice(0,8).forEach(s=>{
     const p=el('p',null,`送 <b>${byId[s.o].name}</b> → 收 <b style="color:var(--good)">${byId[s.i].name}</b>
-      &nbsp;類別 ${w0}-${9-w0} → ${s.after}-${9-s.after}
+      &nbsp;整季 ${L0.cats.toFixed(1)} → <b>${s.L.cats.toFixed(1)}</b> 類 · 贏 ${L0.beat} → ${s.L.beat} 隊 · 對他 ${w0}-${9-w0} → ${s.after}-${9-s.after}
       <span class="hint">(價值差 ${s.bal>0?'+':''}${s.bal.toFixed(1)} —
       ${s.bal>0.5?'對方吃虧,可能不點頭':s.bal<-0.5?'我方讓價,但類別更好(H2H 可接受)':'價值接近,好談'})</span>`);
     p.style.margin='4px 0'; sc.append(p);
