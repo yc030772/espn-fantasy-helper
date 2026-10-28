@@ -606,7 +606,7 @@ function standingsTable(rosters){
   [...all].sort((a,b)=>score(b)-score(a)).forEach(x=>{
     const tr=el('tr'); if(x.t===S.slot-1)tr.classList.add('rec');
     let html=`<td class="l"><b>${teamName(x.t)}</b></td>`
-      +`<td>${x.n}${x.unk?`<sup class="rksup" title="其中 ${x.unk} 人無數據,未計入">+${x.unk}?</sup>`:''}</td>`;
+      +`<td>${x.n}${x.unk?`<sup class="rksup" title="其中 ${x.unk} 人無數據,未計入">+${x.unk}?</sup>`:''}${rosters&&S.teams[x.t]?.ir?.length?`<sup class="rksup" title="IR:${S.teams[x.t].ir.map(i=>byId[i]?.name||i).join('、')}(不算分)">+${S.teams[x.t].ir.length} IR</sup>`:''}</td>`;
     CATS.forEach(c=>{
       const r=rk[c][x.t];
       const col=r<=3?'var(--good)':r<=half?'var(--warn)':'var(--bad)';
@@ -1181,7 +1181,7 @@ function leagueView(app){
   if(S.teams){
     c.append(el('h2',null,'我是哪一隊'));
     const sel=el('select');
-    S.teams.forEach(t=>sel.append(new Option(`${t.name} (${t.roster.length} 人)`,t.id)));
+    S.teams.forEach(t=>sel.append(new Option(`${t.name} (${t.roster.length} 人${t.ir?.length?` + IR ${t.ir.map(i=>byId[i]?.name.split(' ').slice(-1)[0]||'?').join('/')}`:''})`,t.id)));
     // 選了哪隊,選秀頁的「我是第幾隊」就跟著改
     sel.value=S.myTeam; sel.onchange=()=>{S.myTeam=+sel.value;S.slot=S.teams.findIndex(t=>t.id===S.myTeam)+1;save()};
     c.append(sel);
