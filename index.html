@@ -588,10 +588,10 @@ function standingsTable(rosters){
     return box;
   }
   const avg=rosters?null:poolAvg();
-  // 連結聯盟模式:用每週預期原始總量(場均 × 3.5 場 × 出賽率),跟擂台/交易頁同一套,不用 z;選秀模式仍用 z
+  // 連結聯盟模式:各人本季場均直接相加(不乘場數、不乘出賽率),FG%/FT% 用總命中/總出手;選秀模式仍用 z
   const RK={PTS:'PTS',REB:'REB',AST:'AST',STL:'STL',BLK:'BLK','3PM':'3PM',TO:'TO',FG_imp:'FG%',FT_imp:'FT%'};
   const all=[...Array(S.nTeams).keys()].map(t=>{const ids=rosters?rosters[t]:rosterOf(t);
-    let cat; if(rosters){const w=teamWeek(ids,0); cat={}; CATS.forEach(c=>cat[c]=w[RK[c]])} else cat=projCats(t,avg);
+    let cat; if(rosters){const sm={}; RAWK.forEach(k=>sm[k]=0); ids.forEach(i=>{const p=byId[i]; if(p&&!noData(p))RAWK.forEach(k=>sm[k]+=p[k]||0)}); const w=pctOf(sm); cat={}; CATS.forEach(c=>cat[c]=w[RK[c]])} else cat=projCats(t,avg);
     return {t,cat,n:ids.length,unk:ids.filter(i=>byId[i]&&noData(byId[i])).length}});
   // 每個類別的名次(原始模式 TO 越少越好)
   const rk={};
@@ -625,7 +625,7 @@ function standingsTable(rosters){
   const totUnk=all.reduce((s,x)=>s+x.unk,0);
   if(totUnk)box.append(el('p','hint',
     `⚠ 已選走的人裡有 <b>${totUnk}</b> 位沒有去年數據(新秀等),類別統計未計入 —— 人數欄的 <code>+N?</code> 就是。`));
-  box.append(el('p','hint',(rosters?'數字 = ESPN 目前名單(不含 IR)每週預期總量:本季實際場均 × 3.5 場 × 出賽率(投影 GP/82)相加,FG%/FT% 用總命中/總出手;TO 越少名次越好。右上小字 = 名次。':'數字 = 預估最終陣容(已選 + 空位用剩下好球員的平均補滿)該類別的 z 總和,右上小字 = 名次。')
+  box.append(el('p','hint',(rosters?'數字 = ESPN 目前名單(不含 IR)各人本季場均直接相加,FG%/FT% 用總命中/總出手;TO 越少名次越好。右上小字 = 名次。':'數字 = 預估最終陣容(已選 + 空位用剩下好球員的平均補滿)該類別的 z 總和,右上小字 = 名次。')
     +`綠 = 前 3、黃 = 前段、紅 = 後段。「前段」= 排在前 ${half} 名的類別數,H2H 需要 5 類。`));
   return box;
 }
