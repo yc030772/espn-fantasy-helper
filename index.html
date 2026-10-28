@@ -621,7 +621,7 @@ function standingsTable(rosters){
   const totUnk=all.reduce((s,x)=>s+x.unk,0);
   if(totUnk)box.append(el('p','hint',
     `⚠ 已選走的人裡有 <b>${totUnk}</b> 位沒有去年數據(新秀等),類別統計未計入 —— 人數欄的 <code>+N?</code> 就是。`));
-  box.append(el('p','hint','數字 = 預估最終陣容(已選 + 空位用剩下好球員的平均補滿)該類別的 z 總和,右上小字 = 名次。'
+  box.append(el('p','hint',(rosters?'數字 = ESPN 目前名單(不含 IR)各人本季實際 z 分數 × 類別權重的總和,右上小字 = 名次。':'數字 = 預估最終陣容(已選 + 空位用剩下好球員的平均補滿)該類別的 z 總和,右上小字 = 名次。')
     +`綠 = 前 3、黃 = 前段、紅 = 後段。「前段」= 排在前 ${half} 名的類別數,H2H 需要 5 類。`));
   return box;
 }
